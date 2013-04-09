@@ -4,6 +4,7 @@ IRCSharp
 IRCSharp is an IRC library written for use in C#/.NET applications, like IRC bots or clients.
 
 **What does it do**
+
 Currently, not much, as it's still under active development. It currently allows you to do the following:
 - Connect to an IRC server
 - Join a channel
