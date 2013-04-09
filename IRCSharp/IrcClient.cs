@@ -15,6 +15,7 @@ namespace IRCSharp
 	public delegate void RawLineReceiveEvent(string line);
 	public delegate void FormattedLineReceiveEvent(IrcLine line);
 	public delegate void MessageReceiveEvent(IrcMessage message);
+	public delegate void NickChangeEvent(IrcUser user, string newNick);
 
     public class IrcClient
     {
@@ -23,8 +24,9 @@ namespace IRCSharp
 		public event RawLineReceiveEvent OnRawLineReceived;
 		public event FormattedLineReceiveEvent OnFormattedLineReceived;
 		public event MessageReceiveEvent OnMessageReceived;
+		public event NickChangeEvent OnNickChanged;
 		
-
+		// Maps channel names to IrcChannels
 		private Dictionary<string, IrcChannel> channels = new Dictionary<string, IrcChannel>();
 
 		private NetClient client;
@@ -73,6 +75,11 @@ namespace IRCSharp
 			if (OnConnectionEstablished != null) OnConnectionEstablished();
 		}
 
+		public void ChangeNick(string nick)
+		{
+			SendRaw("NICK :" + nick);
+		}
+
 		private void OnReceiveData(string line)
 		{
 			if(line.StartsWith("PING")){
@@ -87,8 +94,6 @@ namespace IRCSharp
 			if(OnFormattedLineReceived != null) OnFormattedLineReceived(linef);
 
 			ProcessIrcLine(linef);
-
-			
 		}
 
 		private void ProcessIrcLine(IrcLine line)
@@ -99,17 +104,30 @@ namespace IRCSharp
 					break;
 				case "NOTICE":
 					break;
+				case "NICK":
+					ProcessNickChange(line);
+					break;
 				default:
 					break;
 			}
 		}
+
+		private IrcUser GetUserFromSender(string sender)
+		{
+			string nick = sender.Substring(0, sender.IndexOf('!'));
+			string ident = sender.Substring(sender.IndexOf('!') + 1, sender.IndexOf('@') - sender.IndexOf('!') - 1);
+			string hostmask = sender.Substring(sender.IndexOf('@') + 1);
+			return new IrcUser(nick, ident, hostmask);
+		}
+
+		private void ProcessNickChange(IrcLine line)
+		{
+			if (OnNickChanged != null) OnNickChanged(GetUserFromSender(line.Sender), line.FinalArgument);
+		}
+
 		private void ProcessPm(IrcLine line)
 		{
-			string nick = line.Sender.Substring(0, line.Sender.IndexOf('!'));
-			string ident = line.Sender.Substring(line.Sender.IndexOf('!')+1,line.Sender.IndexOf('@') - line.Sender.IndexOf('!')-1);
-			string hostmask = line.Sender.Substring(line.Sender.IndexOf('@')+1);
-			IrcUser sender = new IrcUser(nick,ident,hostmask);
-			OnMessageReceived(new IrcMessage(sender, line.Arguments[0], line.FinalArgument));
+			if(OnMessageReceived != null) OnMessageReceived(new IrcMessage(GetUserFromSender(line.Sender), line.Arguments[0], line.FinalArgument));
 		}
 
 

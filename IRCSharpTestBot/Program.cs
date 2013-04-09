@@ -37,6 +37,8 @@ namespace IRCSharpTestBot
 				Console.WriteLine("RAW: " + line.ToString());
 				Console.ResetColor();
 			};*/
+			client.OnNickChanged += OnNickChanged;
+
 			client.OnMessageReceived += (message) =>
 			{
 				Console.ForegroundColor = ConsoleColor.Blue;
@@ -50,6 +52,13 @@ namespace IRCSharpTestBot
 			client.Connect("irc.esper.net", 6667, "BaggyBetaBot");
 			client.JoinChannel("#baggy");
 		}
+
+		void OnNickChanged(IrcUser user, string newNick)
+		{
+			Console.ForegroundColor = ConsoleColor.Red;
+			Console.WriteLine(user.Nick + " changed nick to " + newNick);
+			Console.ResetColor();
+		}
 		private void ProcessCommand(IrcMessage message)
 		{
 			if(!message.Sender.Ident.Equals("~baggerboo"))
@@ -60,9 +69,12 @@ namespace IRCSharpTestBot
 			string[] args = command.Substring(command.IndexOf(' ')+1).Split(' ');
 			if (command.StartsWith("join")) {
 				client.JoinChannel(args[0]);
-			} else if (command.Equals("part")) {
+			} else if (command.StartsWith("part")) {
 				client.LeaveChannel(message.Channel);
+			} else if (command.StartsWith("nick")) {
+				client.ChangeNick(args[0]);
 			}
+			Console.WriteLine("Invalid Command");
 		}
 
 		static void Main(string[] args)
