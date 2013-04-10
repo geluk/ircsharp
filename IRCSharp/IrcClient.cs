@@ -80,6 +80,24 @@ namespace IRCSharp
 			SendRaw("NICK :" + nick);
 		}
 
+		/*private void SendRawLine(IrcLine line)
+		{
+			OnRawLineReceived(line);
+		}*/
+
+		private void StartRawLineSend(string line) 
+		{
+			OnRawLineReceived(line);
+		}
+		private void StartIrcLineSend(IrcLine line)
+		{
+			OnFormattedLineReceived(line);
+		}
+		private void StartPrivMsgSend(IrcMessage msg)
+		{
+			OnMessageReceived(msg);
+		}
+
 		private void OnReceiveData(string line)
 		{
 			if(line.StartsWith("PING")){
@@ -89,9 +107,15 @@ namespace IRCSharp
 			}
 			IrcLine linef = ParseIrcLine(line);
 
-			if(OnRawLineReceived != null) OnRawLineReceived(line);
-			
-			if(OnFormattedLineReceived != null) OnFormattedLineReceived(linef);
+			if (OnRawLineReceived != null) {
+				var t = new Thread(() => StartRawLineSend(line));
+				t.Start();
+			}
+
+			if (OnFormattedLineReceived != null) {
+				var t = new Thread(() => StartIrcLineSend(linef));
+				t.Start();
+			}
 
 			ProcessIrcLine(linef);
 		}
@@ -112,7 +136,7 @@ namespace IRCSharp
 			}
 		}
 
-		private IrcUser GetUserFromSender(string sender)
+		public IrcUser GetUserFromSender(string sender)
 		{
 			string nick = sender.Substring(0, sender.IndexOf('!'));
 			string ident = sender.Substring(sender.IndexOf('!') + 1, sender.IndexOf('@') - sender.IndexOf('!') - 1);
@@ -127,7 +151,12 @@ namespace IRCSharp
 
 		private void ProcessPm(IrcLine line)
 		{
-			if(OnMessageReceived != null) OnMessageReceived(new IrcMessage(GetUserFromSender(line.Sender), line.Arguments[0], line.FinalArgument));
+			if (OnMessageReceived != null) {
+				IrcMessage msg = new IrcMessage(GetUserFromSender(line.Sender), line.Arguments[0], line.FinalArgument);
+				var t = new Thread(() => StartPrivMsgSend(msg));
+				t.Start();
+
+			}
 		}
 
 
