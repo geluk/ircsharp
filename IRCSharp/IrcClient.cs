@@ -17,6 +17,7 @@ namespace IRCSharp
 	public delegate void NickChangeEvent(IrcUser user, string newNick);
 	public delegate void KickEvent(string user, string channel);
 	public delegate void KickedEvent(string channel);
+	public delegate void DisconnectedEvent();
 
     public class IrcClient
     {
@@ -28,19 +29,27 @@ namespace IRCSharp
 		public event NickChangeEvent OnNickChanged;
 		public event KickEvent OnKick;
 		public event KickedEvent OnKicked;
+		/// <summary>
+		/// Fired whenever the client disconnects, whether intended or not.
+		/// </summary>
+		public event DisconnectedEvent OnDisconnect;
+		/// <summary>
+		/// Fired when the client loses connection, when not intended.
+		/// </summary>
+		public event DisconnectedEvent OnConnectionLost;
 		
+
 		// Maps channel names to IrcChannels
 		private Dictionary<string, IrcChannel> channels = new Dictionary<string, IrcChannel>();
 
 		private NetClient client;
 
-		public bool Connected
-		{
-			get;
-			private set;
-		}
+		private bool QuitRequested = false;
+		public bool Connected{ get; private set; }
 
-		private string nick;
+		private string host, nick, ident, realName;
+		private int port;
+		private bool invisible;
 
 		/// <summary>
 		/// Creates a new IRC Client instance, but does not connect to the server yet.
@@ -68,23 +77,61 @@ namespace IRCSharp
 			if (host == null || nick == null || realName == null) {
 				throw new ArgumentNullException();
 			}
+			this.host = host;
+			this.port = port;
+			this.nick = nick;
+			this.ident = ident;
+			this.realName = realName;
+			this.invisible = invisible;
 
 			client.OnNetworkDataAvailabe += OnReceiveData;
+			client.OnDisconnect += () =>
+			{
+				if (OnDisconnect != null)
+					OnDisconnect();
+				if (!QuitRequested && OnConnectionLost != null) {
+					OnConnectionLost();
+				}
+			};
+			InnerConnect();
+		}
+
+		private void InnerConnect()
+		{
 			client.Connect(host, port);
 			SendRaw("NICK " + nick);
-			this.nick = nick;
 			SendRaw("USER " + ident + " " + (invisible ? 8 : 0) + " * :" + realName);
 			while (!Connected) {
 				Thread.Sleep(20);
 			}
 			Log("Connection to " + host + " established.");
+
 			if (OnConnectionEstablished != null) OnConnectionEstablished();
+		}
+
+		public void Reconnect()
+		{
+			if (client.Connected) {
+				throw new InvalidOperationException("Unable to reconnect: Client is already connected");
+			} else {
+				InnerConnect();
+			}
 		}
 
 		public void ChangeNick(string nick)
 		{
 			SendRaw("NICK :" + nick);
 			this.nick = nick;
+		}
+
+		public void Quit(string reason = null)
+		{
+			if (reason == null) {
+				SendRaw("QUIT");
+			} else {
+				SendRaw("QUIT :" + reason);
+			}
+			QuitRequested = true;
 		}
 
 		/*private void SendRawLine(IrcLine line)
