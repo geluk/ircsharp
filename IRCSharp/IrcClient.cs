@@ -16,6 +16,8 @@ namespace IRCSharp
 	public delegate void FormattedLineReceiveEvent(IrcLine line);
 	public delegate void MessageReceiveEvent(IrcMessage message);
 	public delegate void NickChangeEvent(IrcUser user, string newNick);
+	public delegate void KickEvent(string user, string channel);
+	public delegate void KickedEvent(string channel);
 
     public class IrcClient
     {
@@ -25,7 +27,9 @@ namespace IRCSharp
 		public event FormattedLineReceiveEvent OnFormattedLineReceived;
 		public event MessageReceiveEvent OnMessageReceived;
 		public event NickChangeEvent OnNickChanged;
-		
+		public event KickEvent OnKick;
+		public event KickedEvent OnKicked;
+
 		// Maps channel names to IrcChannels
 		private Dictionary<string, IrcChannel> channels = new Dictionary<string, IrcChannel>();
 
@@ -36,6 +40,8 @@ namespace IRCSharp
 			get;
 			private set;
 		}
+
+		private string nick;
 
 		/// <summary>
 		/// Creates a new IRC Client instance, but does not connect to the server yet.
@@ -67,6 +73,7 @@ namespace IRCSharp
 			client.OnNetworkDataAvailabe += OnReceiveData;
 			client.Connect(host, port);
 			SendRaw("NICK " + nick);
+			this.nick = nick;
 			SendRaw("USER " + ident + " " + (invisible ? 8 : 0) + " * :" + realName);
 			while (!Connected) {
 				Thread.Sleep(20);
@@ -78,6 +85,7 @@ namespace IRCSharp
 		public void ChangeNick(string nick)
 		{
 			SendRaw("NICK :" + nick);
+			this.nick = nick;
 		}
 
 		/*private void SendRawLine(IrcLine line)
@@ -131,6 +139,16 @@ namespace IRCSharp
 				case "NICK":
 					ProcessNickChange(line);
 					break;
+				case "KICK":
+					if (line.Arguments[1].Equals(nick)) {
+						channels.Remove(line.Arguments[0]);
+						if (OnKicked != null) {
+							OnKicked(line.Arguments[0]);
+						}
+					} else if (OnKick != null) {
+						OnKick(line.Arguments[1], line.Arguments[0]);
+					}
+					break;
 				default:
 					break;
 			}
@@ -171,6 +189,12 @@ namespace IRCSharp
 			if(line.EndsWith("\r"))
 				line = line.Substring(0, line.Length - 1);
 
+			string sender = null;
+			if (hasSender) {
+				sender = line.Substring(0, line.IndexOf(' '));
+				line = line.Substring(sender.Length + 1);
+			}
+
 
 			// The line without the final argument, which comes after the first colon that isn't at the start of the line.
 			string lineWithoutFinalArg;
@@ -188,15 +212,10 @@ namespace IRCSharp
 			// Split the line on spaces
 			List<String> splitLine = lineWithoutFinalArg.Split(' ').ToList<string>();
 
-			// First item in the list contains the sender. If there is no sender, use null.
-			if(!hasSender)
-				splitLine.Insert(0, null);
-
-			string sender = (splitLine.Count >= 0 ? splitLine[0] : null);
-			string command = (splitLine.Count >= 1 ? splitLine[1] : null);
+			string command = (splitLine.Count >= 1 ? splitLine[0] : null);
 			
 			// Contains all arguments for the IRC command, except for the last argument. Usually contains just one argument.
-			string[] args = splitLine.GetRange(2, splitLine.Count - 2).ToArray();
+			string[] args = splitLine.GetRange(1, splitLine.Count - 1).ToArray();
 
 			return new IrcLine(sender, command, args, finalArg);
 		}

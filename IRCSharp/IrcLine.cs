@@ -43,9 +43,6 @@ namespace IRCSharp
 				sb.Append(FinalArgument);
 			}
 			string line = sb.ToString();
-			if (line.EndsWith(":")) {
-				Console.WriteLine("Halt");
-			}
 			return line;
 		}
 	}
