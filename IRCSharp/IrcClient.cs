@@ -5,7 +5,6 @@ using System.Text;
 
 using System.Threading;
 using System.Threading.Tasks;
-
 using CSNetLib;
 
 namespace IRCSharp
@@ -29,7 +28,7 @@ namespace IRCSharp
 		public event NickChangeEvent OnNickChanged;
 		public event KickEvent OnKick;
 		public event KickedEvent OnKicked;
-
+		
 		// Maps channel names to IrcChannels
 		private Dictionary<string, IrcChannel> channels = new Dictionary<string, IrcChannel>();
 
@@ -140,17 +139,22 @@ namespace IRCSharp
 					ProcessNickChange(line);
 					break;
 				case "KICK":
-					if (line.Arguments[1].Equals(nick)) {
-						channels.Remove(line.Arguments[0]);
-						if (OnKicked != null) {
-							OnKicked(line.Arguments[0]);
-						}
-					} else if (OnKick != null) {
-						OnKick(line.Arguments[1], line.Arguments[0]);
-					}
+					ProcessKick(line);
 					break;
 				default:
 					break;
+			}
+		}
+
+		private void ProcessKick(IrcLine line)
+		{
+			if (line.Arguments[1].Equals(nick)) {
+				channels.Remove(line.Arguments[0]);
+				if (OnKicked != null) {
+					OnKicked(line.Arguments[0]);
+				}
+			} else if (OnKick != null) {
+				OnKick(line.Arguments[1], line.Arguments[0]);
 			}
 		}
 
