@@ -30,9 +30,6 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="CSNetLib">
-      <HintPath>..\..\CSNetLib\CSNetLib\bin\Debug\CSNetLib.dll</HintPath>
-    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
@@ -47,8 +44,15 @@
     <Compile Include="IrcLine.cs" />
     <Compile Include="IrcMessage.cs" />
     <Compile Include="IrcUser.cs" />
+    <Compile Include="Logger.cs" />
     <Compile Include="PermissionLevel.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\CSNetLib\CSNetLib\CSNetLib.csproj">
+      <Project>{a58c6fe5-452e-401a-8341-d769bbfd3e73}</Project>
+      <Name>CSNetLib</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

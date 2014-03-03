@@ -26,6 +26,7 @@ namespace IRCSharp
 				sb.Append(":");
 				sb.Append(Sender);
 				sb.Append(" ");
+
 			}
 			if (Command != null) {
 				sb.Append(Command);

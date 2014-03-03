@@ -16,6 +16,15 @@ namespace IRCSharp
 			private set;
 		}
 
+		public int UserCount
+		{
+			get
+			{
+				return userPermissions.Count;
+			}
+		}
+
+		
 		/// <param name="name">The name of the channel.</param>
 		/// <param name="users">An array of usernames. Operators and voiced users should be prefixed with @ and + respectively.</param>
 		public IrcChannel(string name, string[] users)
@@ -37,5 +46,23 @@ namespace IRCSharp
 		public IrcChannel(string name)
 		: this(name, new string[0]) { }
 
+		internal void AddUser(string name, PermissionLevel pl)
+		{
+			if (!userPermissions.ContainsKey(name)) {
+				userPermissions.Add(name, pl);
+			}
+		}
+
+		internal void RemoveUser(string name)
+		{
+			userPermissions.Remove(name);
+		}
+
+		internal void SetPermission(string user, PermissionLevel pl)
+		{
+			if (userPermissions.ContainsKey(user)) {
+				userPermissions[user] = pl;
+			}
+		}
 	}
 }

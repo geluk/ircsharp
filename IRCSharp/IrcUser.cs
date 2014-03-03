@@ -16,5 +16,16 @@ namespace IRCSharp
 			this.Ident = ident;
 			this.Hostmask = hostmask;
 		}
+		public override string ToString()
+		{
+			var sb = new StringBuilder();
+			sb.Append(Nick);
+			sb.Append(" (");
+			sb.Append(Ident);
+			sb.Append("@");
+			sb.Append(Hostmask);
+			sb.Append(")");
+			return sb.ToString(); // nickname (ident@hostmask)
+		}
 	}
 }

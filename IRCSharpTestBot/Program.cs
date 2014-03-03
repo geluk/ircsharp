@@ -18,7 +18,6 @@ namespace IRCSharpTestBot
 			{
 				Console.WriteLine("Connection Established");
 			};
-
 			client.OnRawLineReceived += (line) =>
 			{
 				Console.ForegroundColor = ConsoleColor.DarkGray;
@@ -49,8 +48,48 @@ namespace IRCSharpTestBot
 				}
 			};
 
-			client.Connect("irc.esper.net", 6667, "BaggyBetaBot");
-			client.JoinChannel("#baggy");
+			string channel = "#baggy";
+			client.Connect("irc.esper.net", 6667, "Baggybot_test");
+			
+			client.JoinChannel(channel);
+
+			StringBuilder sb = new StringBuilder();
+			for (int i = 0; i < 16; i++) {
+				sb.Append(GetColor(i % 99));
+				sb.Append("=");
+			}
+			client.SendMessage(channel, GetColor(12) + sb.ToString());
+
+			sb = new StringBuilder();
+			sb.Append("test ");
+			sb.Append(GetItalic());
+			sb.Append("test ");
+			sb.Append(GetUnderlined());
+			sb.Append("test ");
+			sb.Append(GetBold());
+			sb.Append("test ");
+
+
+			client.SendMessage(channel, GetColor(12) + sb.ToString());
+			}
+
+		string GetBold()
+		{
+			return "\x02";
+		}
+
+		string GetUnderlined()
+		{
+			return "\x1F";
+		}
+		string GetItalic()
+		{
+			return "\x09";
+		}
+
+		string GetColor(int color)
+		{
+			return ((char)((byte)3)).ToString() + color;
 		}
 
 		void OnNickChanged(IrcUser user, string newNick)
