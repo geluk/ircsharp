@@ -33,6 +33,16 @@ namespace IRCSharp
 		DisconnectOnRequest
 	}
 
+	public struct ConnectionInfo
+	{
+		public string Host;
+		public int Port;
+		public string Nick;
+		public string Ident;
+		public string RealName;
+		public bool Invisible;
+	}
+
     public class IrcClient
     {
 		public event ConnectionEstablishedEvent OnConnectionEstablished; // The client has established a connection with the IRC server
@@ -65,6 +75,7 @@ namespace IRCSharp
 		// Maps channel names to IrcChannels
 		private Dictionary<string, IrcChannel> channels = new Dictionary<string, IrcChannel>();
 		public const string Version = "1.21";
+		private const int pingTimeout = 200;
 
 
 		public int ChannelCount
@@ -105,10 +116,18 @@ namespace IRCSharp
 
 		private void OnTimeoutCheck(object state)
 		{
-			if (Connected && (DateTime.Now - lastPing).TotalSeconds > 360) {
-				client.DisconnectWithoutEvent();
-				Connected = false;
+			if (Connected && (DateTime.Now - lastPing).TotalSeconds > pingTimeout) {
 				if (OnDisconnect != null) {
+					var t = System.Threading.Thread.CurrentThread;
+					// Once we disconnect the NetLib client, there will be no alive foreground threads left.
+					// For this reason, we promote this thread to a foreground thread, so that the application will not be closed
+					// while this thread is reconnecting to the IRC server.
+					// Once the connection is opened, a new NetLib client listening thread (which is also a foreground thread)
+					// will be started, and this thread, having fulfilled its objective, will die.
+					t.IsBackground = false;
+					t.Name = "Bot restart thread";
+					client.DisconnectWithoutEvent();
+					Connected = false;
 					OnDisconnect(DisconnectReason.PingTimeout);
 				}
 			}
@@ -142,11 +161,26 @@ namespace IRCSharp
 			return client.GetSocket();
 		}
 
+		public void Connect(string host, int port, string nick, string ident = null, string realName = "IRCSharp", bool invisible = true)
+		{
+			Connect(
+				new ConnectionInfo()
+					{
+						Host = host,
+						Port = port,
+						Nick = nick,
+						Ident = ident,
+						RealName = realName,
+						Invisible = invisible
+					}
+			);
+		}
+
 		/// <summary>s
 		/// Connects to an IRC server using the specified parameters.
 		/// </summary>
 		/// <param name="invisible">Determines whether the client should connect with mode +i (invisible to all users who aren't in the same channel)</param>
-		public void Connect(string host, int port, string nick, string ident = null, string realName = "IRCSharp", bool invisible = true)
+		public void Connect(ConnectionInfo ci)
 		{
 			Log("Starting IRCSharp version " + Version);
 			//Log("Using CsNetLib version " + NetLib.Version);
@@ -155,18 +189,17 @@ namespace IRCSharp
 
 
 			// If no ident is specified, try to use the nickname as ident
-			if (ident == null)
-				ident = nick;
-			// Do not accept null references
-			if (host == null || nick == null || realName == null) {
+			if (ci.Ident == null)
+				ci.Ident = nick;
+			if (ci.Host == null || ci.Nick == null || ci.RealName == null) {
 				throw new ArgumentNullException();
 			}
-			this.host = host;
-			this.port = port;
-			this.nick = nick;
-			this.ident = ident;
-			this.realName = realName;
-			this.invisible = invisible;
+			this.host = ci.Host;
+			this.port = ci.Port;
+			this.nick = ci.Nick;
+			this.ident = ci.Ident;
+			this.realName = ci.RealName;
+			this.invisible = ci.Invisible;
 			InnerConnect();
 		}
 		private void InnerConnect()
@@ -177,28 +210,15 @@ namespace IRCSharp
 			} catch (System.Net.Sockets.SocketException e) {
 				throw e;
 			}
-
 			SendRaw("NICK " + nick);
 			SendRaw("USER " + ident + " " + (invisible ? 8 : 0) + " * :" + realName);
+			Log("Credentials sent");
 			while (!Connected) {
 				Thread.Sleep(20);
 			}
 			Log("Connection to " + host + " established.");
 
 			if (OnConnectionEstablished != null) OnConnectionEstablished();
-		}
-		public void Reconnect()
-		{
-			if (client.Connected) {
-				throw new InvalidOperationException("Unable to reconnect: Client is already connected");
-			} else {
-				try {
-					CreateClient();
-					InnerConnect();
-				} catch (System.Net.Sockets.SocketException e) {
-					throw e;
-				}
-			}
 		}
 
 		public bool InChannel(string channel)
@@ -257,19 +277,19 @@ namespace IRCSharp
 
 			Logger.Log(line, LogLevel.In);
 
-			while((byte)line[0] < 32){
+			/*while((byte)line[0] < 32){
 				Log(string.Format("Removed leading character {0:X2}", (byte)line[0]));
 				line = line.Substring(1);
-			}
+			}*/
 
-			Func<int> lastIndex = () => line.Length -1;
+			/*Func<int> lastIndex = () => line.Length -1;
 
 			byte b = (byte)line[lastIndex()];
 			while (b < 32 && b != 1) {
-				Log(string.Format("Removed trailing character {0:X2}", (byte)line[lastIndex()]));
+				Log(string.Format("Removed trailing character {0:X2} in line \"{1}\"", (byte)line[lastIndex()], line));
 				line = line.Substring(0, lastIndex());
 				b = (byte)line[lastIndex()];
-			}
+			}*/
 
 			if (line.StartsWith("PING")) {
 				lastPing = DateTime.Now;
@@ -494,7 +514,17 @@ namespace IRCSharp
 		public bool SendRaw(string data)
 		{
 			Logger.Log(data, LogLevel.Out);
-			return client.SendData(data);
+			var result = client.SendData(data);
+			if(result){
+				// When the client sends a message to the IRC server, the IRC server will, in addition to processing this message,
+				// also regard this as an indication that the client is still alive. Therefore, if it was about to send a ping to the client,
+				// it will not do so, since the client has already indicated that it is alive.
+				// For this reason, we must inform the client that (provided that the message is successfully sent) it is still connected to the 
+				// IRC server. If this value is not set, the client will disconnect itself automatically because it isn't receiving any pings within
+				// the specified ping timeout.
+				lastPing = DateTime.Now;
+			}
+			return result;
 		}
 
 		private void Log(string message)
@@ -561,6 +591,24 @@ namespace IRCSharp
 		public bool SendMessage(string target, string message)
 		{
 			return SendRaw("PRIVMSG " + target + " :" + message);
+		}
+
+		public object GetConnectionInfo()
+		{
+			return new ConnectionInfo()
+			{
+				Host = host,
+				Port = port,
+				Nick = nick,
+				Ident = ident,
+				RealName = realName,
+				Invisible = invisible
+			};
+		}
+
+		public void Disconnect()
+		{
+			client.DisconnectWithoutEvent();
 		}
 	}
 }
