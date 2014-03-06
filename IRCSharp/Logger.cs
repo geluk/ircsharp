@@ -19,7 +19,6 @@ namespace IRCSharp
 	{
 		private static string filename = "ircsharp.log";
 		private static bool disposed = false;
-		public static event LogEvent OnLogEvent;
 
 		static Logger()
 		{

@@ -43,8 +43,8 @@ namespace IRCSharp
 		public bool Invisible;
 	}
 
-    public class IrcClient
-    {
+	public class IrcClient
+	{
 		public event ConnectionEstablishedEvent OnConnectionEstablished; // The client has established a connection with the IRC server
 		public event DebugLogEvent OnDebugLog;
 		public event DebugLogEvent OnNetLibDebugLog;
@@ -74,14 +74,15 @@ namespace IRCSharp
 		}
 		// Maps channel names to IrcChannels
 		private Dictionary<string, IrcChannel> channels = new Dictionary<string, IrcChannel>();
-		public const string Version = "1.21";
+		public const string Version = "2.0";
 		private const int pingTimeout = 200;
 
 		public bool ReplyToPings { get; set; }
 
 		public int ChannelCount
 		{
-			get {
+			get
+			{
 				return channels.Count;
 			}
 		}
@@ -100,7 +101,7 @@ namespace IRCSharp
 		private NetLibClient client;
 
 		private bool QuitRequested = false;
-		public bool Connected{ get; private set; }
+		public bool Connected { get; private set; }
 
 		private string host, nick, ident, realName;
 		private int port;
@@ -120,21 +121,13 @@ namespace IRCSharp
 		{
 			if (Connected && (DateTime.Now - lastPing).TotalSeconds > pingTimeout) {
 				if (OnDisconnect != null) {
-					GeneratePingTimeout();
+					DisconnectWithPingTimeout();
 				}
 			}
 		}
 
-		public void GeneratePingTimeout()
+		public void DisconnectWithPingTimeout()
 		{
-			var t = System.Threading.Thread.CurrentThread;
-			// Once we disconnect the NetLib client, there will be no alive foreground threads left.
-			// For this reason, we promote this thread to a foreground thread, so that the application will not be closed
-			// while this thread is reconnecting to the IRC server.
-			// Once the connection is opened, a new NetLib client listening thread (which is also a foreground thread)
-			// will be started, and this thread, having fulfilled its objective, will die.
-			t.IsBackground = false;
-			//t.Name = "Bot restart thread";
 			client.DisconnectWithoutEvent();
 			Connected = false;
 			OnDisconnect(DisconnectReason.PingTimeout);
@@ -224,7 +217,8 @@ namespace IRCSharp
 			}
 			Log("Connection to " + host + " established.");
 
-			if (OnConnectionEstablished != null) OnConnectionEstablished();
+			if (OnConnectionEstablished != null)
+				Task.Run(() => OnConnectionEstablished());
 		}
 
 		public bool InChannel(string channel)
@@ -260,62 +254,31 @@ namespace IRCSharp
 			}
 		}
 
-		/*private void SendRawLine(IrcLine line)
+		private void ReplyToPing(string line)
 		{
-			OnRawLineReceived(line);
-		}*/
+			lastPing = DateTime.Now;
+			Connected = true;
+			if (ReplyToPings) {
+				string response = "PONG :" + line.Substring("PING :".Length);
+				SendRaw(response);
+			}
+		}
 
-		private void StartRawLineSend(string line) 
-		{
-			OnRawLineReceived(line);
-		}
-		private void StartIrcLineSend(IrcLine line)
-		{
-			OnFormattedLineReceived(line);
-		}
-		private void StartPrivMsgSend(IrcMessage msg)
-		{
-			OnMessageReceived(msg);
-		}
 		private void OnReceiveData(string line, long sender)
 		{
-			line = line.TrimEnd('\r', '\n');
-
 			Logger.Log(line, LogLevel.In);
 
-			/*while((byte)line[0] < 32){
-				Log(string.Format("Removed leading character {0:X2}", (byte)line[0]));
-				line = line.Substring(1);
-			}*/
-
-			/*Func<int> lastIndex = () => line.Length -1;
-
-			byte b = (byte)line[lastIndex()];
-			while (b < 32 && b != 1) {
-				Log(string.Format("Removed trailing character {0:X2} in line \"{1}\"", (byte)line[lastIndex()], line));
-				line = line.Substring(0, lastIndex());
-				b = (byte)line[lastIndex()];
-			}*/
-
 			if (line.StartsWith("PING")) {
-				lastPing = DateTime.Now;
-				Connected = true;
-				if (ReplyToPings) {
-					string response = "PONG :" + line.Substring("PING :".Length);
-					SendRaw(response);
-				}
+				ReplyToPing(line);
 				return;
 			}
 			IrcLine linef = ParseIrcLine(line);
-
 			if (OnRawLineReceived != null) {
-				var t = new Thread(() => StartRawLineSend(line));
-				t.Start();
-				
+				Task.Run(() => OnRawLineReceived(line));
 			}
-
 			ProcessIrcLine(linef);
 		}
+
 		private void ProcessIrcLine(IrcLine line)
 		{
 			switch (line.Command) {
@@ -351,8 +314,7 @@ namespace IRCSharp
 					break;
 				default:
 					if (OnFormattedLineReceived != null) {
-						var t = new Thread(() => StartIrcLineSend(line));
-						t.Start();
+						Task.Run(() => OnFormattedLineReceived(line));
 					}
 					break;
 			}
@@ -361,13 +323,13 @@ namespace IRCSharp
 		private void ProcessQuit(IrcLine line)
 		{
 			if (OnQuit != null) {
-				OnQuit(GetUserFromSender(line.Sender), line.FinalArgument);
+				Task.Run(() => OnQuit(GetUserFromSender(line.Sender), line.FinalArgument));
 			}
 		}
 		private void ProcessNotice(IrcLine line)
 		{
 			if (OnNoticeReceived != null) {
-				OnNoticeReceived(GetUserFromSender(line.Sender), line.FinalArgument);
+				Task.Run(() => OnNoticeReceived(GetUserFromSender(line.Sender), line.FinalArgument));
 			}
 		}
 		private void ProcessNameReply(IrcLine line)
@@ -396,10 +358,14 @@ namespace IRCSharp
 			IrcUser sender = GetUserFromSender(line.Sender);
 			if (sender.Nick == nick) {
 				channels.Remove(line.Arguments[0]);
-				if (OnPartedChannel != null) OnPartedChannel(line.Arguments[0]);
+				if (OnPartedChannel != null) {
+					Task.Run(() => OnPartedChannel(line.Arguments[0]));
+				}
 			} else {
 				channels[line.Arguments[0]].RemoveUser(sender.Nick);
-				if (OnPartChannel != null) OnPartChannel(sender, line.Arguments[0]);
+				if (OnPartChannel != null) {
+					Task.Run(() => OnPartChannel(sender, line.Arguments[0]));
+				}
 			}
 		}
 		private void ProcessJoin(IrcLine line)
@@ -407,10 +373,14 @@ namespace IRCSharp
 			IrcUser sender = GetUserFromSender(line.Sender);
 			if (sender.Nick == nick && !channels.ContainsKey(line.Arguments[0])) {
 				channels.Add(line.Arguments[0], new IrcChannel(line.Arguments[0]));
-				if (OnJoinedChannel != null) OnJoinedChannel(line.Arguments[0]);
+				if (OnJoinedChannel != null) {
+					Task.Run(() => OnJoinedChannel(line.Arguments[0]));
+				}
 			} else {
 				channels[line.Arguments[0]].AddUser(sender.Nick, PermissionLevel.Default);
-				if (OnJoinChannel != null) OnJoinChannel(sender, line.Arguments[0]);
+				if (OnJoinChannel != null) {
+					Task.Run(() => OnJoinChannel(sender, line.Arguments[0]));
+				}
 			}
 		}
 		private void ProcessKick(IrcLine line)
@@ -418,10 +388,10 @@ namespace IRCSharp
 			if (line.Arguments[1].Equals(nick)) {
 				channels.Remove(line.Arguments[0]);
 				if (OnKicked != null) {
-					OnKicked(line.Arguments[0]);
+					Task.Run(() => OnKicked(line.Arguments[0]));
 				}
 			} else if (OnKick != null) {
-				OnKick(line.Arguments[1], line.Arguments[0]);
+				Task.Run(() => OnKick(line.Arguments[1], line.Arguments[0]));
 			}
 		}
 		public IrcChannel[] GetChannels()
@@ -444,11 +414,13 @@ namespace IRCSharp
 		}
 		private void ProcessNickChange(IrcLine line)
 		{
-			if (OnNickChanged != null) OnNickChanged(GetUserFromSender(line.Sender), line.FinalArgument);
+			if (OnNickChanged != null) {
+				Task.Run(() => OnNickChanged(GetUserFromSender(line.Sender), line.FinalArgument));
+			}
 		}
 		private void ProcessPm(IrcLine line)
 		{
-			string actionSequence ="\u0001ACTION";
+			string actionSequence = "\u0001ACTION";
 
 			bool action = false;
 
@@ -457,7 +429,6 @@ namespace IRCSharp
 				string message = line.FinalArgument;
 				message = message.Substring(8, message.Length - 9);
 				line.FinalArgument = message;
-				//Console.WriteLine(message);
 			}
 
 			if (OnMessageReceived != null) {
@@ -469,9 +440,8 @@ namespace IRCSharp
 					channel = line.Arguments[0];
 				}
 				IrcMessage msg = new IrcMessage(sender, channel, line.FinalArgument, action);
-				var t = new Thread(() => StartPrivMsgSend(msg));
-				t.Start();
 
+				Task.Run(() => OnMessageReceived(msg));
 			}
 		}
 		private IrcLine ParseIrcLine(string line)
@@ -480,9 +450,9 @@ namespace IRCSharp
 			bool hasSender = line.StartsWith(":");
 
 			// Clean up the line a bit
-			if(hasSender)
+			if (hasSender)
 				line = line.Substring(1);
-			if(line.EndsWith("\r"))
+			if (line.EndsWith("\r"))
 				line = line.Substring(0, line.Length - 1);
 
 			string sender = null;
@@ -509,7 +479,7 @@ namespace IRCSharp
 			List<String> splitLine = lineWithoutFinalArg.Split(' ').ToList<string>();
 
 			string command = (splitLine.Count >= 1 ? splitLine[0] : null);
-			
+
 			// Contains all arguments for the IRC command, except for the last argument. Usually contains just one argument.
 			string[] args = splitLine.GetRange(1, splitLine.Count - 1).ToArray();
 
@@ -524,7 +494,7 @@ namespace IRCSharp
 		{
 			Logger.Log(data, LogLevel.Out);
 			var result = client.Send(data, 0);
-			if(result){
+			if (result) {
 				// When the client sends a message to the IRC server, the IRC server will, in addition to processing this message,
 				// also regard this as an indication that the client is still alive. Therefore, if it was about to send a ping to the client,
 				// it will not do so, since the client has already indicated that it is alive.
@@ -538,7 +508,10 @@ namespace IRCSharp
 
 		private void Log(string message)
 		{
-			if (OnDebugLog != null) OnDebugLog(message);
+			// We use a blocking call here, because it may be important that debug messages arrive in the right order.
+			if (OnDebugLog != null) {
+				OnDebugLog(message);
+			}
 		}
 		/// <summary>
 		/// Join a channel.
@@ -550,7 +523,6 @@ namespace IRCSharp
 
 			SendRaw("JOIN :" + channelName);
 			if (validate) {
-
 				int sleepTime = 50;
 				int totalSleepTime = 0;
 				while (!channels.ContainsKey(channelName)) {
@@ -588,7 +560,7 @@ namespace IRCSharp
 			var partMessage = "";
 			foreach (var channel in channels) {
 				channels.Remove(channel);
-				partMessage += ","+channel;
+				partMessage += "," + channel;
 			}
 			SendRaw("PART " + partMessage.Substring(1));
 		}
