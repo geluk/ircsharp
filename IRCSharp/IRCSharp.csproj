@@ -49,9 +49,9 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\CSNetLib\CSNetLib\CSNetLib.csproj">
-      <Project>{a58c6fe5-452e-401a-8341-d769bbfd3e73}</Project>
-      <Name>CSNetLib</Name>
+    <ProjectReference Include="..\..\CsNetLib2\CsNetLib2\CsNetLib2.csproj">
+      <Project>{68170802-5de7-4f66-99c7-136b3c7dd93c}</Project>
+      <Name>CsNetLib2</Name>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

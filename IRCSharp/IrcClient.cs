@@ -5,7 +5,7 @@ using System.Text;
 
 using System.Threading;
 using System.Threading.Tasks;
-using CSNetLib;
+using CsNetLib2;
 using System.Diagnostics;
 
 namespace IRCSharp
@@ -61,7 +61,7 @@ namespace IRCSharp
 		public event JoinedChannelEvent OnJoinedChannel; // The client joins a channel
 		public event PartedChannelEvent OnPartedChannel; // The client parts a channel
 		public event NoticeReceiveEvent OnNoticeReceived; // Client receives a notice from the IRC server
-		public event OnLocalPortKnownEvent OnLocalPortKnown
+		public event LocalPortKnownEvent OnLocalPortKnown
 		{
 			add
 			{
@@ -77,6 +77,7 @@ namespace IRCSharp
 		public const string Version = "1.21";
 		private const int pingTimeout = 200;
 
+		public bool ReplyToPings { get; set; }
 
 		public int ChannelCount
 		{
@@ -96,7 +97,7 @@ namespace IRCSharp
 			}
 		}
 
-		private NetClient client;
+		private NetLibClient client;
 
 		private bool QuitRequested = false;
 		public bool Connected{ get; private set; }
@@ -109,6 +110,7 @@ namespace IRCSharp
 
 		public IrcClient()
 		{
+			ReplyToPings = true;
 			Logger.ClearLog();
 			CreateClient();
 			timeoutCheck = new Timer(OnTimeoutCheck, null, 5000, 5000);
@@ -118,25 +120,30 @@ namespace IRCSharp
 		{
 			if (Connected && (DateTime.Now - lastPing).TotalSeconds > pingTimeout) {
 				if (OnDisconnect != null) {
-					var t = System.Threading.Thread.CurrentThread;
-					// Once we disconnect the NetLib client, there will be no alive foreground threads left.
-					// For this reason, we promote this thread to a foreground thread, so that the application will not be closed
-					// while this thread is reconnecting to the IRC server.
-					// Once the connection is opened, a new NetLib client listening thread (which is also a foreground thread)
-					// will be started, and this thread, having fulfilled its objective, will die.
-					t.IsBackground = false;
-					t.Name = "Bot restart thread";
-					client.DisconnectWithoutEvent();
-					Connected = false;
-					OnDisconnect(DisconnectReason.PingTimeout);
+					GeneratePingTimeout();
 				}
 			}
 		}
 
+		public void GeneratePingTimeout()
+		{
+			var t = System.Threading.Thread.CurrentThread;
+			// Once we disconnect the NetLib client, there will be no alive foreground threads left.
+			// For this reason, we promote this thread to a foreground thread, so that the application will not be closed
+			// while this thread is reconnecting to the IRC server.
+			// Once the connection is opened, a new NetLib client listening thread (which is also a foreground thread)
+			// will be started, and this thread, having fulfilled its objective, will die.
+			t.IsBackground = false;
+			//t.Name = "Bot restart thread";
+			client.DisconnectWithoutEvent();
+			Connected = false;
+			OnDisconnect(DisconnectReason.PingTimeout);
+		}
+
 		private void CreateClient()
 		{
-			client = new NetClient();
-			client.OnNetworkDataAvailabe += OnReceiveData;
+			client = new NetLibClient(TransferProtocols.Delimited, Encoding.UTF8);
+			client.OnDataAvailable += OnReceiveData;
 			client.OnLogEvent += (message) =>
 			{
 				if (OnNetLibDebugLog != null) {
@@ -146,7 +153,7 @@ namespace IRCSharp
 			client.OnDisconnect += () =>
 			{
 				Connected = false;
-				channels = new Dictionary<string, IrcChannel>();
+				client.DisconnectWithoutEvent();
 				if (OnDisconnect != null) {
 					if (QuitRequested)
 						OnDisconnect(DisconnectReason.DisconnectOnRequest);
@@ -156,10 +163,10 @@ namespace IRCSharp
 			};
 		}
 
-		public System.Net.Sockets.Socket GetSocket()
+		/*public System.Net.Sockets.Socket GetSocket()
 		{
 			return client.GetSocket();
-		}
+		}*/
 
 		public void Connect(string host, int port, string nick, string ident = null, string realName = "IRCSharp", bool invisible = true)
 		{
@@ -183,8 +190,7 @@ namespace IRCSharp
 		public void Connect(ConnectionInfo ci)
 		{
 			Log("Starting IRCSharp version " + Version);
-			//Log("Using CsNetLib version " + NetLib.Version);
-			Log("Using legacy version of CsNetLib");
+			Log("Using CsNetLib version " + NetLib.Version);
 
 
 
@@ -271,7 +277,7 @@ namespace IRCSharp
 		{
 			OnMessageReceived(msg);
 		}
-		private void OnReceiveData(string line)
+		private void OnReceiveData(string line, long sender)
 		{
 			line = line.TrimEnd('\r', '\n');
 
@@ -294,10 +300,10 @@ namespace IRCSharp
 			if (line.StartsWith("PING")) {
 				lastPing = DateTime.Now;
 				Connected = true;
-				Log(">>" + line);
-				string response = "PONG :" + line.Substring("PING :".Length);
-				SendRaw(response);
-				Log("<<" + response);
+				if (ReplyToPings) {
+					string response = "PONG :" + line.Substring("PING :".Length);
+					SendRaw(response);
+				}
 				return;
 			}
 			IrcLine linef = ParseIrcLine(line);
@@ -314,6 +320,9 @@ namespace IRCSharp
 		{
 			switch (line.Command) {
 				case "PRIVMSG":
+
+					var chars = line.FinalArgument.ToCharArray();
+
 					ProcessPm(line);
 					break;
 				case "NOTICE":
@@ -448,7 +457,7 @@ namespace IRCSharp
 				string message = line.FinalArgument;
 				message = message.Substring(8, message.Length - 9);
 				line.FinalArgument = message;
-				Console.WriteLine(message);
+				//Console.WriteLine(message);
 			}
 
 			if (OnMessageReceived != null) {
@@ -514,7 +523,7 @@ namespace IRCSharp
 		public bool SendRaw(string data)
 		{
 			Logger.Log(data, LogLevel.Out);
-			var result = client.SendData(data);
+			var result = client.Send(data, 0);
 			if(result){
 				// When the client sends a message to the IRC server, the IRC server will, in addition to processing this message,
 				// also regard this as an indication that the client is still alive. Therefore, if it was about to send a ping to the client,
@@ -590,7 +599,10 @@ namespace IRCSharp
 		/// <param name="message">The message to be sent.</param>
 		public bool SendMessage(string target, string message)
 		{
-			return SendRaw("PRIVMSG " + target + " :" + message);
+			if (Connected) {
+				return SendRaw("PRIVMSG " + target + " :" + message);
+			}
+			throw new InvalidOperationException("Attempt to send a message while the client is not connected to a server");
 		}
 
 		public object GetConnectionInfo()
@@ -608,7 +620,7 @@ namespace IRCSharp
 
 		public void Disconnect()
 		{
-			client.DisconnectWithoutEvent();
+			client.Disconnect();
 		}
 	}
 }
