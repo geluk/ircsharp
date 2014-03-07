@@ -135,7 +135,7 @@ namespace IRCSharp
 
 		private void CreateClient()
 		{
-			client = new NetLibClient(TransferProtocols.Delimited, Encoding.UTF8);
+			client = new NetLibClient(TransferProtocolType.Delimited, Encoding.UTF8);
 			client.OnDataAvailable += OnReceiveData;
 			client.OnLogEvent += (message) =>
 			{
