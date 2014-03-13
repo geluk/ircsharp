@@ -16,8 +16,8 @@ namespace IRCSharp
 	public delegate void FormattedLineReceiveEvent(IrcLine line);
 	public delegate void MessageReceiveEvent(IrcMessage message);
 	public delegate void NickChangeEvent(IrcUser user, string newNick);
-	public delegate void KickEvent(string user, string channel);
-	public delegate void KickedEvent(string channel);
+	public delegate void KickEvent(string user, string channel, string reason, IrcUser kicker);
+	public delegate void KickedEvent(string channel, string reason, IrcUser kicker);
 	public delegate void DisconnectedEvent(DisconnectReason reason);
 	public delegate void QuitEvent(IrcUser user, string reason);
 	public delegate void JoinedChannelEvent(string channel);
@@ -74,7 +74,7 @@ namespace IRCSharp
 		}
 		// Maps channel names to IrcChannels
 		private Dictionary<string, IrcChannel> channels = new Dictionary<string, IrcChannel>();
-		public const string Version = "2.0";
+		public const string Version = "2.1";
 		private const int pingTimeout = 200;
 
 		public bool ReplyToPings { get; set; }
@@ -101,9 +101,26 @@ namespace IRCSharp
 		private NetLibClient client;
 
 		private bool QuitRequested = false;
-		public bool Connected { get; private set; }
 
-		private string host, nick, ident, realName;
+		private bool _connected;
+		public bool Connected
+		{
+			get
+			{
+				return _connected;
+			}
+			private set
+			{
+				_connected = value;
+			}
+		}
+
+		public string RemoteHost { get; private set; }
+		public string LocalHost { get; private set; }
+		public string Nick { get; private set; }
+		public string Ident { get; private set; }
+		public string RealName { get; private set; }
+
 		private int port;
 		private bool invisible;
 		private DateTime lastPing;
@@ -113,13 +130,12 @@ namespace IRCSharp
 		{
 			ReplyToPings = true;
 			Logger.ClearLog();
-			CreateClient();
 			timeoutCheck = new Timer(OnTimeoutCheck, null, 5000, 5000);
 		}
 
 		private void OnTimeoutCheck(object state)
 		{
-			if (Connected && (DateTime.Now - lastPing).TotalSeconds > pingTimeout) {
+			if (Connected && lastPing.Year != 1 && (DateTime.Now - lastPing).TotalSeconds > pingTimeout) {
 				if (OnDisconnect != null) {
 					DisconnectWithPingTimeout();
 				}
@@ -133,33 +149,19 @@ namespace IRCSharp
 			OnDisconnect(DisconnectReason.PingTimeout);
 		}
 
-		private void CreateClient()
+		private void SetupClient()
 		{
-			client = new NetLibClient(TransferProtocolType.Delimited, Encoding.UTF8);
 			client.OnDataAvailable += OnReceiveData;
-			client.OnLogEvent += (message) =>
-			{
-				if (OnNetLibDebugLog != null) {
-					OnNetLibDebugLog(message);
-				}
-			};
-			client.OnDisconnect += () =>
-			{
-				Connected = false;
-				client.DisconnectWithoutEvent();
-				if (OnDisconnect != null) {
-					if (QuitRequested)
-						OnDisconnect(DisconnectReason.DisconnectOnRequest);
-					else
-						OnDisconnect(DisconnectReason.ServerDisconnect);
-				}
-			};
+			client.OnLogEvent += HandleLogEvent;
+			client.OnDisconnect += HandleDisconnect;
 		}
 
-		/*public System.Net.Sockets.Socket GetSocket()
+		private void HandleLogEvent(string message)
 		{
-			return client.GetSocket();
-		}*/
+			if (OnNetLibDebugLog != null) {
+				OnNetLibDebugLog(message);
+			}
+		}
 
 		public void Connect(string host, int port, string nick, string ident = null, string realName = "IRCSharp", bool invisible = true)
 		{
@@ -189,15 +191,15 @@ namespace IRCSharp
 
 			// If no ident is specified, try to use the nickname as ident
 			if (ci.Ident == null)
-				ci.Ident = nick;
+				ci.Ident = Nick;
 			if (ci.Host == null || ci.Nick == null || ci.RealName == null) {
 				throw new ArgumentNullException();
 			}
-			this.host = ci.Host;
+			this.RemoteHost = ci.Host;
 			this.port = ci.Port;
-			this.nick = ci.Nick;
-			this.ident = ci.Ident;
-			this.realName = ci.RealName;
+			this.Nick = ci.Nick;
+			this.Ident = ci.Ident;
+			this.RealName = ci.RealName;
 			this.invisible = ci.Invisible;
 			InnerConnect();
 		}
@@ -205,17 +207,18 @@ namespace IRCSharp
 		{
 			Log("Connecting to the IRC server");
 			try {
-				client.Connect(host, port);
+				SetupClient();
+				client.Connect(RemoteHost, port);
 			} catch (System.Net.Sockets.SocketException e) {
 				throw e;
 			}
-			SendRaw("NICK " + nick);
-			SendRaw("USER " + ident + " " + (invisible ? 8 : 0) + " * :" + realName);
+			SendRaw("NICK " + Nick);
+			SendRaw("USER " + Ident + " " + (invisible ? 8 : 0) + " * :" + RealName);
 			Log("Credentials sent");
 			while (!Connected) {
 				Thread.Sleep(20);
 			}
-			Log("Connection to " + host + " established.");
+			Log("Connection to " + RemoteHost + " established.");
 
 			if (OnConnectionEstablished != null)
 				Task.Run(() => OnConnectionEstablished());
@@ -228,7 +231,7 @@ namespace IRCSharp
 		public void ChangeNick(string nick)
 		{
 			SendRaw("NICK :" + nick);
-			this.nick = nick;
+			this.Nick = nick;
 		}
 		public void Part(string channel, string reason = null)
 		{
@@ -356,7 +359,7 @@ namespace IRCSharp
 		private void ProcessPart(IrcLine line)
 		{
 			IrcUser sender = GetUserFromSender(line.Sender);
-			if (sender.Nick == nick) {
+			if (sender.Nick == Nick) {
 				channels.Remove(line.Arguments[0]);
 				if (OnPartedChannel != null) {
 					Task.Run(() => OnPartedChannel(line.Arguments[0]));
@@ -371,10 +374,23 @@ namespace IRCSharp
 		private void ProcessJoin(IrcLine line)
 		{
 			IrcUser sender = GetUserFromSender(line.Sender);
-			if (sender.Nick == nick && !channels.ContainsKey(line.Arguments[0])) {
-				channels.Add(line.Arguments[0], new IrcChannel(line.Arguments[0]));
-				if (OnJoinedChannel != null) {
-					Task.Run(() => OnJoinedChannel(line.Arguments[0]));
+			if (sender.Nick == Nick) {
+				if (Ident != sender.Ident) {
+					Log(string.Format("Warning: Real ident ({0}) differs from requested ident ({1}). Ident field changed according to real ident", sender.Ident, Ident));
+					Ident = sender.Ident;
+				}
+				if (LocalHost == null) {
+					Log("Local host detected as " + sender.Hostmask);
+					LocalHost = sender.Hostmask;
+				}
+
+				if (channels.ContainsKey(line.Arguments[0])) {
+					throw new InvalidOperationException("Received a JOIN for " + line.Arguments[0] + " whil already in this channel.");
+				} else {
+					channels.Add(line.Arguments[0], new IrcChannel(line.Arguments[0]));
+					if (OnJoinedChannel != null) {
+						Task.Run(() => OnJoinedChannel(line.Arguments[0]));
+					}
 				}
 			} else {
 				channels[line.Arguments[0]].AddUser(sender.Nick, PermissionLevel.Default);
@@ -385,13 +401,15 @@ namespace IRCSharp
 		}
 		private void ProcessKick(IrcLine line)
 		{
-			if (line.Arguments[1].Equals(nick)) {
+			IrcUser sender = GetUserFromSender(line.Sender);
+			if (line.Arguments[1].Equals(Nick)) {
 				channels.Remove(line.Arguments[0]);
 				if (OnKicked != null) {
-					Task.Run(() => OnKicked(line.Arguments[0]));
+					Task.Run(() => OnKicked(line.Arguments[0], line.FinalArgument, sender));
 				}
 			} else if (OnKick != null) {
-				Task.Run(() => OnKick(line.Arguments[1], line.Arguments[0]));
+
+				Task.Run(() => OnKick(line.Arguments[1], line.Arguments[0], line.FinalArgument, sender));
 			}
 		}
 		public IrcChannel[] GetChannels()
@@ -434,7 +452,7 @@ namespace IRCSharp
 			if (OnMessageReceived != null) {
 				IrcUser sender = GetUserFromSender(line.Sender);
 				string channel;
-				if (line.Arguments[0] == nick) {
+				if (line.Arguments[0] == Nick) {
 					channel = sender.Nick;
 				} else {
 					channel = line.Arguments[0];
@@ -581,11 +599,11 @@ namespace IRCSharp
 		{
 			return new ConnectionInfo()
 			{
-				Host = host,
+				Host = RemoteHost,
 				Port = port,
-				Nick = nick,
-				Ident = ident,
-				RealName = realName,
+				Nick = Nick,
+				Ident = Ident,
+				RealName = RealName,
 				Invisible = invisible
 			};
 		}
@@ -593,6 +611,47 @@ namespace IRCSharp
 		public void Disconnect()
 		{
 			client.Disconnect();
+		}
+
+		public void AddOrCreateClient(NetLibClient client)
+		{
+			if (client == null) {
+				this.client = new NetLibClient(TransferProtocolType.Delimited, Encoding.UTF8);
+			} else {
+				if (Connected) {
+					throw new InvalidOperationException("Chaning the network client while already connected is not allowed");
+				}
+				this.client = client;
+			}
+		}
+
+		private void HandleDisconnect()
+		{
+			Connected = false;
+			client.DisconnectWithoutEvent();
+			Logger.Dispose();
+			if (OnDisconnect != null) {
+				if (QuitRequested)
+					OnDisconnect(DisconnectReason.DisconnectOnRequest);
+				else
+					OnDisconnect(DisconnectReason.ServerDisconnect);
+			}
+		}
+
+		public Dictionary<string, IrcChannel> Detach()
+		{
+			client.OnDataAvailable -= OnReceiveData;
+			client.OnDisconnect -= HandleDisconnect;
+			client.OnLogEvent -= HandleLogEvent;
+			return channels;
+		}
+
+		public void Attach(NetLibClient client, Dictionary<string, IrcChannel> channels)
+		{
+			this.client = client;
+			this.channels = channels;
+			SetupClient();
+			Connected = true;
 		}
 	}
 }
