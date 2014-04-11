@@ -43,6 +43,7 @@
     <Compile Include="IrcClient.cs" />
     <Compile Include="IrcLine.cs" />
     <Compile Include="IrcMessage.cs" />
+    <Compile Include="IrcProtocolParser.cs" />
     <Compile Include="IrcUser.cs" />
     <Compile Include="Logger.cs" />
     <Compile Include="PermissionLevel.cs" />

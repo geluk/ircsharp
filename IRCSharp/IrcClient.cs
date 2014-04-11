@@ -43,6 +43,17 @@ namespace IRCSharp
 		public bool Invisible;
 	}
 
+	[Serializable]
+	public struct ClientState
+	{
+		public string RemoteHost;
+		public string LocalHost;
+		public string Nick;
+		public string Ident;
+		public string RealName;
+		public Dictionary<string, IrcChannel> Channels;
+	}
+
 	public class IrcClient
 	{
 		public event ConnectionEstablishedEvent OnConnectionEstablished; // The client has established a connection with the IRC server
@@ -74,18 +85,13 @@ namespace IRCSharp
 		}
 		// Maps channel names to IrcChannels
 		private Dictionary<string, IrcChannel> channels = new Dictionary<string, IrcChannel>();
+		private IrcProtocolParser parser = new IrcProtocolParser();
+		private NetLibClient client;
+
 		public const string Version = "2.1";
 		private const int pingTimeout = 200;
-
 		public bool ReplyToPings { get; set; }
-
-		public int ChannelCount
-		{
-			get
-			{
-				return channels.Count;
-			}
-		}
+		public int ChannelCount { get { return channels.Count; } }
 		public int TotalUserCount
 		{
 			get
@@ -97,11 +103,9 @@ namespace IRCSharp
 				return count;
 			}
 		}
-
-		private NetLibClient client;
+		public int MaxJoinAttempts = 8;
 
 		private bool QuitRequested = false;
-
 		private bool _connected;
 		public bool Connected
 		{
@@ -125,9 +129,11 @@ namespace IRCSharp
 		private bool invisible;
 		private DateTime lastPing;
 		private Timer timeoutCheck;
+		private bool debug;
 
-		public IrcClient()
+		public IrcClient(bool debug)
 		{
+			this.debug = debug;
 			ReplyToPings = true;
 			Logger.ClearLog();
 			timeoutCheck = new Timer(OnTimeoutCheck, null, 5000, 5000);
@@ -179,7 +185,7 @@ namespace IRCSharp
 		}
 
 		/// <summary>s
-		/// Connects to an IRC server using the specified parameters.
+		/// Connects to an IRC server using the spestring.IsNullOrWhitespace(cified parameters.
 		/// </summary>
 		/// <param name="invisible">Determines whether the client should connect with mode +i (invisible to all users who aren't in the same channel)</param>
 		public void Connect(ConnectionInfo ci)
@@ -187,25 +193,26 @@ namespace IRCSharp
 			Log("Starting IRCSharp version " + Version);
 			Log("Using CsNetLib version " + NetLib.Version);
 
-
-
-			// If no ident is specified, try to use the nickname as ident
-			if (ci.Ident == null)
-				ci.Ident = Nick;
-			if (ci.Host == null || ci.Nick == null || ci.RealName == null) {
-				throw new ArgumentNullException();
+			if (string.IsNullOrWhiteSpace(ci.Host))
+				throw new ArgumentException("Settings value is empty or does not exist", "Host");
+			if(string.IsNullOrWhiteSpace(ci.Nick))
+				throw new ArgumentException("Settings value is empty or does not exist", "Nick");
+			if(string.IsNullOrWhiteSpace(ci.RealName)){
+				throw new ArgumentException("Settings value is empty or does not exist", "RealName");
 			}
+
 			this.RemoteHost = ci.Host;
 			this.port = ci.Port;
 			this.Nick = ci.Nick;
-			this.Ident = ci.Ident;
+			this.Ident = ci.Ident == null ? ci.Nick : ci.Ident;
 			this.RealName = ci.RealName;
 			this.invisible = ci.Invisible;
+
 			InnerConnect();
 		}
 		private void InnerConnect()
 		{
-			Log("Connecting to the IRC server");
+			Log(string.Format("Connecting to {0}:{1}", RemoteHost, port));
 			try {
 				SetupClient();
 				client.Connect(RemoteHost, port);
@@ -257,6 +264,29 @@ namespace IRCSharp
 			}
 		}
 
+		public ClientState GetClientState()
+		{
+			return new ClientState()
+			{
+				Ident = Ident,
+				LocalHost = LocalHost,
+				RemoteHost = RemoteHost,
+				Nick = Nick,
+				RealName = RealName,
+				Channels = channels
+			};
+		}
+		private void SetClientState(ClientState state)
+		{
+			Ident = state.Ident;
+			LocalHost = state.LocalHost;
+			RemoteHost = state.RemoteHost;
+			Nick = state.Nick;
+			RealName = state.RealName;
+			channels = state.Channels;
+		}
+
+
 		private void ReplyToPing(string line)
 		{
 			lastPing = DateTime.Now;
@@ -275,7 +305,7 @@ namespace IRCSharp
 				ReplyToPing(line);
 				return;
 			}
-			IrcLine linef = ParseIrcLine(line);
+			IrcLine linef = parser.ParseIrcLine(line);
 			if (OnRawLineReceived != null) {
 				Task.Run(() => OnRawLineReceived(line));
 			}
@@ -286,7 +316,6 @@ namespace IRCSharp
 		{
 			switch (line.Command) {
 				case "PRIVMSG":
-
 					var chars = line.FinalArgument.ToCharArray();
 
 					ProcessPm(line);
@@ -326,13 +355,13 @@ namespace IRCSharp
 		private void ProcessQuit(IrcLine line)
 		{
 			if (OnQuit != null) {
-				Task.Run(() => OnQuit(GetUserFromSender(line.Sender), line.FinalArgument));
+				Task.Run(() => OnQuit(parser.GetUserFromSender(line.Sender), line.FinalArgument));
 			}
 		}
 		private void ProcessNotice(IrcLine line)
 		{
 			if (OnNoticeReceived != null) {
-				Task.Run(() => OnNoticeReceived(GetUserFromSender(line.Sender), line.FinalArgument));
+				Task.Run(() => OnNoticeReceived(parser.GetUserFromSender(line.Sender), line.FinalArgument));
 			}
 		}
 		private void ProcessNameReply(IrcLine line)
@@ -358,7 +387,7 @@ namespace IRCSharp
 		}
 		private void ProcessPart(IrcLine line)
 		{
-			IrcUser sender = GetUserFromSender(line.Sender);
+			IrcUser sender = parser.GetUserFromSender(line.Sender);
 			if (sender.Nick == Nick) {
 				channels.Remove(line.Arguments[0]);
 				if (OnPartedChannel != null) {
@@ -373,14 +402,14 @@ namespace IRCSharp
 		}
 		private void ProcessJoin(IrcLine line)
 		{
-			IrcUser sender = GetUserFromSender(line.Sender);
+			IrcUser sender = parser.GetUserFromSender(line.Sender);
 			if (sender.Nick == Nick) {
 				if (Ident != sender.Ident) {
 					Log(string.Format("Warning: Real ident ({0}) differs from requested ident ({1}). Ident field changed according to real ident", sender.Ident, Ident));
 					Ident = sender.Ident;
 				}
 				if (LocalHost == null) {
-					Log("Local host detected as " + sender.Hostmask);
+					Log("Hostmask detected as " + sender.Hostmask);
 					LocalHost = sender.Hostmask;
 				}
 
@@ -401,7 +430,7 @@ namespace IRCSharp
 		}
 		private void ProcessKick(IrcLine line)
 		{
-			IrcUser sender = GetUserFromSender(line.Sender);
+			IrcUser sender = parser.GetUserFromSender(line.Sender);
 			if (line.Arguments[1].Equals(Nick)) {
 				channels.Remove(line.Arguments[0]);
 				if (OnKicked != null) {
@@ -416,24 +445,10 @@ namespace IRCSharp
 		{
 			return channels.Values.ToArray();
 		}
-		public IrcUser GetUserFromSender(string sender)
-		{
-			if (!sender.Contains("!")) {
-				string nick = String.Empty;
-				string ident = String.Empty;
-				string hostmask = sender;
-				return new IrcUser(nick, ident, hostmask);
-			} else {
-				string nick = sender.Substring(0, sender.IndexOf('!'));
-				string ident = sender.Substring(sender.IndexOf('!') + 1, sender.IndexOf('@') - sender.IndexOf('!') - 1);
-				string hostmask = sender.Substring(sender.IndexOf('@') + 1);
-				return new IrcUser(nick, ident, hostmask);
-			}
-		}
 		private void ProcessNickChange(IrcLine line)
 		{
 			if (OnNickChanged != null) {
-				Task.Run(() => OnNickChanged(GetUserFromSender(line.Sender), line.FinalArgument));
+				Task.Run(() => OnNickChanged(parser.GetUserFromSender(line.Sender), line.FinalArgument));
 			}
 		}
 		private void ProcessPm(IrcLine line)
@@ -450,7 +465,7 @@ namespace IRCSharp
 			}
 
 			if (OnMessageReceived != null) {
-				IrcUser sender = GetUserFromSender(line.Sender);
+				IrcUser sender = parser.GetUserFromSender(line.Sender);
 				string channel;
 				if (line.Arguments[0] == Nick) {
 					channel = sender.Nick;
@@ -459,49 +474,12 @@ namespace IRCSharp
 				}
 				IrcMessage msg = new IrcMessage(sender, channel, line.FinalArgument, action);
 
-				Task.Run(() => OnMessageReceived(msg));
+				if (debug) {
+					OnMessageReceived(msg);
+				} else {
+					Task.Run(() => OnMessageReceived(msg));
+				}
 			}
-		}
-		private IrcLine ParseIrcLine(string line)
-		{
-			// If the line starts with a colon, it contains information about the sender.
-			bool hasSender = line.StartsWith(":");
-
-			// Clean up the line a bit
-			if (hasSender)
-				line = line.Substring(1);
-			if (line.EndsWith("\r"))
-				line = line.Substring(0, line.Length - 1);
-
-			string sender = null;
-			if (hasSender) {
-				sender = line.Substring(0, line.IndexOf(' '));
-				line = line.Substring(sender.Length + 1);
-			}
-
-
-			// The line without the final argument, which comes after the first colon that isn't at the start of the line.
-			string lineWithoutFinalArg;
-			// The final argument
-			string finalArg;
-
-			if (line.Contains(':')) {
-				lineWithoutFinalArg = line.Substring(0, line.IndexOf(':'));
-				finalArg = line.Substring(line.IndexOf(':') + 1);
-			} else {
-				lineWithoutFinalArg = line;
-				finalArg = null;
-			}
-
-			// Split the line on spaces
-			List<String> splitLine = lineWithoutFinalArg.Split(' ').ToList<string>();
-
-			string command = (splitLine.Count >= 1 ? splitLine[0] : null);
-
-			// Contains all arguments for the IRC command, except for the last argument. Usually contains just one argument.
-			string[] args = splitLine.GetRange(1, splitLine.Count - 1).ToArray();
-
-			return new IrcLine(sender, command, args, finalArg);
 		}
 
 		/// <summary>
@@ -518,7 +496,7 @@ namespace IRCSharp
 				// it will not do so, since the client has already indicated that it is alive.
 				// For this reason, we must inform the client that (provided that the message is successfully sent) it is still connected to the 
 				// IRC server. If this value is not set, the client will disconnect itself automatically because it isn't receiving any pings within
-				// the specified ping timeout.
+				// the spestring.IsNullOrWhitespace(cified ping timeout.
 				lastPing = DateTime.Now;
 			}
 			return result;
@@ -535,7 +513,7 @@ namespace IRCSharp
 		/// Join a channel.
 		/// </summary>
 		/// <param name="channelName">The channel to join.</param>
-		public void JoinChannel(string channelName, bool validate = true)
+		public void JoinChannel(string channelName, bool validate = true, int attemptNumber = 1)
 		{
 			channelName = channelName.ToLower();
 
@@ -545,9 +523,14 @@ namespace IRCSharp
 				int totalSleepTime = 0;
 				while (!channels.ContainsKey(channelName)) {
 					if (totalSleepTime > 1000) {
-						Log(string.Format("Attempt to join {0} failed, retrying.", channelName));
-						JoinChannel(channelName, true);
-						return;
+						if (attemptNumber == MaxJoinAttempts) {
+							Log(string.Format("Maximum number of attempts to join {0} reached, channel not joined.", channelName));
+							return;
+						} else {
+							Log(string.Format("Attempt to join {0} failed, retrying.", channelName));
+							JoinChannel(channelName, true, ++attemptNumber);
+							return;
+						}
 					}
 					Thread.Sleep(sleepTime);
 					totalSleepTime += sleepTime;
@@ -619,7 +602,7 @@ namespace IRCSharp
 				this.client = new NetLibClient(TransferProtocolType.Delimited, Encoding.UTF8);
 			} else {
 				if (Connected) {
-					throw new InvalidOperationException("Chaning the network client while already connected is not allowed");
+					throw new InvalidOperationException("Changing the network client while already connected is not allowed");
 				}
 				this.client = client;
 			}
@@ -646,12 +629,19 @@ namespace IRCSharp
 			return channels;
 		}
 
-		public void Attach(NetLibClient client, Dictionary<string, IrcChannel> channels)
+		public void Attach(ClientState state)
 		{
-			this.client = client;
-			this.channels = channels;
+			client = new NetLibClient(TransferProtocolType.Delimited, Encoding.UTF8);
 			SetupClient();
+			client.Connect("localhost", 6667);
 			Connected = true;
+
+			SetClientState(state);
+		}
+
+		public List<string> GetUsers(string channel)
+		{
+			return channels[channel].Users;
 		}
 	}
 }

@@ -5,9 +5,9 @@ using System.Text;
 
 namespace IRCSharp
 {
+	[Serializable]
 	public class IrcChannel
 	{
-
 		private Dictionary<string, PermissionLevel> userPermissions = new Dictionary<string, PermissionLevel>();
 
 		public string Name
@@ -24,7 +24,26 @@ namespace IRCSharp
 			}
 		}
 
-		
+		public List<string> Users {
+			get
+			{
+				return userPermissions.Select(pair => pair.Key + GetPrefix(pair.Value)).ToList();
+			}
+		}
+
+		private string GetPrefix(PermissionLevel pl)
+		{
+			switch (pl) {
+				case PermissionLevel.Default:
+					return "";
+				case PermissionLevel.Voiced:
+					return "+";
+				case PermissionLevel.Operator:
+					return "@";
+			}
+			throw new ArgumentException("PermissionLevel must be Default, Voiced or Operator");
+		}
+
 		/// <param name="name">The name of the channel.</param>
 		/// <param name="users">An array of usernames. Operators and voiced users should be prefixed with @ and + respectively.</param>
 		public IrcChannel(string name, string[] users)
