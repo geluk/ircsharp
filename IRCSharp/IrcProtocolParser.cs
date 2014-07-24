@@ -10,6 +10,9 @@ namespace IRCSharp
 	{
 		public IrcUser GetUserFromSender(string sender)
 		{
+			if (sender == null) {
+				return new IrcUser(null, null, null);
+			}
 			if (!sender.Contains("!")) {
 				string nick = String.Empty;
 				string ident = String.Empty;
@@ -62,7 +65,7 @@ namespace IRCSharp
 			// Contains all arguments for the IRC command, except for the last argument. Usually contains just one argument.
 			string[] args = splitLine.GetRange(1, splitLine.Count - 1).ToArray();
 
-			return new IrcLine(sender, command, args, finalArg);
+			return new IrcLine(sender, GetUserFromSender(sender), command, args, finalArg);
 		}
 	}
 }

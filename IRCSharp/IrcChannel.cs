@@ -27,7 +27,7 @@ namespace IRCSharp
 		public List<string> Users {
 			get
 			{
-				return userPermissions.Select(pair => pair.Key + GetPrefix(pair.Value)).ToList();
+				return userPermissions.Select(pair => GetPrefix(pair.Value) + pair.Key).ToList();
 			}
 		}
 

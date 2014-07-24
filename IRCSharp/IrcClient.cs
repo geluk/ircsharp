@@ -16,6 +16,7 @@ namespace IRCSharp
 	public delegate void FormattedLineReceiveEvent(IrcLine line);
 	public delegate void MessageReceiveEvent(IrcMessage message);
 	public delegate void NickChangeEvent(IrcUser user, string newNick);
+	public delegate void NickChangedEvent(string newNick);
 	public delegate void KickEvent(string user, string channel, string reason, IrcUser kicker);
 	public delegate void KickedEvent(string channel, string reason, IrcUser kicker);
 	public delegate void DisconnectedEvent(DisconnectReason reason);
@@ -25,6 +26,9 @@ namespace IRCSharp
 	public delegate void JoinChannelEvent(IrcUser user, string channel);
 	public delegate void PartChannelEvent(IrcUser user, string channel);
 	public delegate void NoticeReceiveEvent(IrcUser user, string notice);
+	public delegate void TopicReceiveEvent(string channel, string topic);
+	public delegate void TopicSetEvent(string channel, IrcUser user, DateTime time);
+	public delegate void NamesKnownEvent(IrcChannel channel);
 
 	public enum DisconnectReason
 	{
@@ -62,7 +66,8 @@ namespace IRCSharp
 		public event RawLineReceiveEvent OnRawLineReceived; // A raw IRC line is received
 		public event FormattedLineReceiveEvent OnFormattedLineReceived; // A formatted IRC line has been created
 		public event MessageReceiveEvent OnMessageReceived; // A message is received
-		public event NickChangeEvent OnNickChanged; // Someone changes their nick
+		public event NickChangeEvent OnNickChange; // Someone changes their nick
+		public event NickChangedEvent OnNickChanged; // The client changes their nick
 		public event KickEvent OnKick; // Someone is kicked
 		public event KickedEvent OnKicked; // The client is kicked
 		public event DisconnectedEvent OnDisconnect; // The client disconnects, whether intended or not
@@ -72,6 +77,10 @@ namespace IRCSharp
 		public event JoinedChannelEvent OnJoinedChannel; // The client joins a channel
 		public event PartedChannelEvent OnPartedChannel; // The client parts a channel
 		public event NoticeReceiveEvent OnNoticeReceived; // Client receives a notice from the IRC server
+		public event TopicReceiveEvent OnTopicReceived; // Client receives the topic for a channel
+		public event TopicSetEvent OnTopicSet; // Client receives the date and time on which a topic was set, and by whom it was set
+		public event NamesKnownEvent OnNamesKnown; // Client has received all the names of the users inside a channel
+
 		public event LocalPortKnownEvent OnLocalPortKnown
 		{
 			add
@@ -317,7 +326,6 @@ namespace IRCSharp
 			switch (line.Command) {
 				case "PRIVMSG":
 					var chars = line.FinalArgument.ToCharArray();
-
 					ProcessPm(line);
 					break;
 				case "NOTICE":
@@ -338,17 +346,46 @@ namespace IRCSharp
 				case "PART":
 					ProcessPart(line);
 					break;
-				case "372":
-					// Ignore topic page
-					break;
 				case "QUIT":
 					ProcessQuit(line);
+					break;
+				case "332":
+					ProcessTopic(line);
+					break;
+				case "333":
+					ProcessTopicSet(line);
+					break;
+				case "366":
+					ProcessEndOfNames(line);
 					break;
 				default:
 					if (OnFormattedLineReceived != null) {
 						Task.Run(() => OnFormattedLineReceived(line));
 					}
 					break;
+			}
+		}
+
+		private void ProcessEndOfNames(IrcLine line)
+		{
+			if (OnNamesKnown != null) {
+				Task.Run(() => OnNamesKnown(channels[line.Arguments[1]]));
+			}
+		}
+
+		private void ProcessTopicSet(IrcLine line)
+		{
+			int seconds = 0;
+			int.TryParse(line.Arguments[3], out seconds);
+			if (OnTopicSet != null) {
+				Task.Run(() => OnTopicSet(line.Arguments[1], parser.GetUserFromSender(line.Arguments[2]), new DateTime(1970,1,1,0,0,0,0,System.DateTimeKind.Utc).AddSeconds(seconds)));
+			}
+		}
+
+		private void ProcessTopic(IrcLine line)
+		{
+			if (OnTopicReceived != null) {
+				Task.Run(() => OnTopicReceived(line.Arguments[1], line.FinalArgument));
 			}
 		}
 
@@ -447,8 +484,15 @@ namespace IRCSharp
 		}
 		private void ProcessNickChange(IrcLine line)
 		{
-			if (OnNickChanged != null) {
-				Task.Run(() => OnNickChanged(parser.GetUserFromSender(line.Sender), line.FinalArgument));
+			if (line.User.Nick == Nick) {
+				Nick = line.FinalArgument;
+				if (OnNickChanged != null) {
+					Task.Run(() => OnNickChanged(line.FinalArgument));
+				}
+			} else {
+				if (OnNickChange != null) {
+					Task.Run(() => OnNickChange(parser.GetUserFromSender(line.Sender), line.FinalArgument));
+				}
 			}
 		}
 		private void ProcessPm(IrcLine line)
