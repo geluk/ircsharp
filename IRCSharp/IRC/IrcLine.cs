@@ -1,9 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+﻿using System.Text;
 
-namespace IRCSharp
+namespace IRCSharp.IRC
 {
 	public struct IrcLine
 	{
@@ -12,21 +9,23 @@ namespace IRCSharp
 		public string Command;
 		public string[] Arguments;
 		public string FinalArgument;
+		public string RawLine;
 
-		public IrcLine(string sender, IrcUser user, string command, string[] args, string final)
+		public IrcLine(string sender, IrcUser user, string command, string[] args, string final, string raw)
 		{
 			Sender = sender;
 			User = user;
 			Command = command;
 			Arguments = args;
 			FinalArgument = final;
+			RawLine = raw;
 		}
 
 		public string ShortForm()
 		{
-			StringBuilder sb = new StringBuilder();
+			var sb = new StringBuilder();
 
-			for (int i = 1; i < Arguments.Length; i++) {
+			for (var i = 1; i < Arguments.Length; i++) {
 				if (Arguments[i] != string.Empty) {
 					sb.Append(Arguments[i]);
 					sb.Append(" ");
@@ -35,13 +34,13 @@ namespace IRCSharp
 			if (FinalArgument != null) {
 				sb.Append(FinalArgument);
 			}
-			string line = sb.ToString();
+			var line = sb.ToString();
 			return line;
 		}
 
 		public override string ToString()
 		{
-			StringBuilder sb = new StringBuilder();
+			var sb = new StringBuilder();
 			if (Sender != null) {
 				sb.Append(":");
 				sb.Append(Sender);
@@ -52,7 +51,7 @@ namespace IRCSharp
 				sb.Append(Command);
 				sb.Append(" ");
 			}
-			foreach(string s in Arguments)
+			foreach(var s in Arguments)
 			{
 				if (s != string.Empty) {
 					sb.Append(s);
@@ -63,7 +62,7 @@ namespace IRCSharp
 				sb.Append(":");
 				sb.Append(FinalArgument);
 			}
-			string line = sb.ToString();
+			var line = sb.ToString();
 			return line;
 		}
 	}

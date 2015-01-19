@@ -1,9 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+﻿using System.Text;
 
-namespace IRCSharp
+namespace IRCSharp.IRC
 {
 	public struct IrcUser
 	{
@@ -12,9 +9,9 @@ namespace IRCSharp
 		public string Hostmask;
 		public IrcUser(string nick, string ident, string hostmask)
 		{
-			this.Nick = nick;
-			this.Ident = ident;
-			this.Hostmask = hostmask;
+			Nick = nick;
+			Ident = ident;
+			Hostmask = hostmask;
 		}
 		public override string ToString()
 		{

@@ -2,13 +2,11 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace IRCSharp
 {
-	enum PermissionLevel
+	class EventProcessor
 	{
-		Operator,
-		Voiced,
-		Default
 	}
 }

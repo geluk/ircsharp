@@ -1,14 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 
-namespace IRCSharp
+namespace IRCSharp.IRC
 {
 	[Serializable]
 	public class IrcChannel
 	{
-		private Dictionary<string, PermissionLevel> userPermissions = new Dictionary<string, PermissionLevel>();
+		private readonly Dictionary<string, IrcPermissionLevel> userPermissions = new Dictionary<string, IrcPermissionLevel>();
 
 		public string Name
 		{
@@ -31,33 +30,33 @@ namespace IRCSharp
 			}
 		}
 
-		private string GetPrefix(PermissionLevel pl)
+		private string GetPrefix(IrcPermissionLevel pl)
 		{
 			switch (pl) {
-				case PermissionLevel.Default:
+				case IrcPermissionLevel.Default:
 					return "";
-				case PermissionLevel.Voiced:
+				case IrcPermissionLevel.Voiced:
 					return "+";
-				case PermissionLevel.Operator:
+				case IrcPermissionLevel.Operator:
 					return "@";
 			}
-			throw new ArgumentException("PermissionLevel must be Default, Voiced or Operator");
+			throw new ArgumentException("IrcPermissionLevel must be Default, Voiced or Operator");
 		}
 
 		/// <param name="name">The name of the channel.</param>
 		/// <param name="users">An array of usernames. Operators and voiced users should be prefixed with @ and + respectively.</param>
-		public IrcChannel(string name, string[] users)
+		public IrcChannel(string name, IEnumerable<string> users)
 		{
 			Name = name;
-			foreach (string user in users) {
-				PermissionLevel pl;
+			foreach (var user in users) {
+				IrcPermissionLevel pl;
 				if(user.StartsWith("@"))
 				{
-					pl = PermissionLevel.Operator;
+					pl = IrcPermissionLevel.Operator;
 				} else if (user.StartsWith("+")) {
-					pl = PermissionLevel.Voiced;
+					pl = IrcPermissionLevel.Voiced;
 				} else {
-					pl = PermissionLevel.Default;
+					pl = IrcPermissionLevel.Default;
 				}
 				userPermissions.Add(user, pl);
 			}
@@ -65,7 +64,7 @@ namespace IRCSharp
 		public IrcChannel(string name)
 		: this(name, new string[0]) { }
 
-		internal void AddUser(string name, PermissionLevel pl)
+		internal void AddUser(string name, IrcPermissionLevel pl)
 		{
 			if (!userPermissions.ContainsKey(name)) {
 				userPermissions.Add(name, pl);
@@ -77,7 +76,7 @@ namespace IRCSharp
 			userPermissions.Remove(name);
 		}
 
-		internal void SetPermission(string user, PermissionLevel pl)
+		internal void SetPermission(string user, IrcPermissionLevel pl)
 		{
 			if (userPermissions.ContainsKey(user)) {
 				userPermissions[user] = pl;

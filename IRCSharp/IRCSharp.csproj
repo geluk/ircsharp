@@ -39,14 +39,18 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="IrcChannel.cs" />
+    <Compile Include="ClientState.cs" />
+    <Compile Include="ConnectionInfo.cs" />
+    <Compile Include="EventProcessor.cs" />
+    <Compile Include="IRC\IrcChannel.cs" />
     <Compile Include="IrcClient.cs" />
-    <Compile Include="IrcLine.cs" />
-    <Compile Include="IrcMessage.cs" />
+    <Compile Include="IrcEvents.cs" />
+    <Compile Include="IRC\IrcLine.cs" />
+    <Compile Include="IRC\IrcMessage.cs" />
     <Compile Include="IrcProtocolParser.cs" />
-    <Compile Include="IrcUser.cs" />
-    <Compile Include="Logger.cs" />
-    <Compile Include="PermissionLevel.cs" />
+    <Compile Include="IRC\IrcUser.cs" />
+    <Compile Include="IRC\IrcPermissionLevel.cs" />
+    <Compile Include="Properties\Annotations.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

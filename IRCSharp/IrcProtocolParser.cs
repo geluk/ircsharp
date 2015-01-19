@@ -1,8 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using IRCSharp.IRC;
 
 namespace IRCSharp
 {
@@ -14,22 +12,24 @@ namespace IRCSharp
 				return new IrcUser(null, null, null);
 			}
 			if (!sender.Contains("!")) {
-				string nick = String.Empty;
-				string ident = String.Empty;
-				string hostmask = sender;
+				var nick = String.Empty;
+				var ident = String.Empty;
+				var hostmask = sender;
 				return new IrcUser(nick, ident, hostmask);
 			} else {
-				string nick = sender.Substring(0, sender.IndexOf('!'));
-				string ident = sender.Substring(sender.IndexOf('!') + 1, sender.IndexOf('@') - sender.IndexOf('!') - 1);
-				string hostmask = sender.Substring(sender.IndexOf('@') + 1);
+				var nick = sender.Substring(0, sender.IndexOf('!'));
+				var ident = sender.Substring(sender.IndexOf('!') + 1, sender.IndexOf('@') - sender.IndexOf('!') - 1);
+				var hostmask = sender.Substring(sender.IndexOf('@') + 1);
 				return new IrcUser(nick, ident, hostmask);
 			}
 		}
 
-		public IrcLine ParseIrcLine(string line)
+		public IrcLine ParseIrcLine(string rawLine)
 		{
+			var line = rawLine;
+
 			// If the line starts with a colon, it contains information about the sender.
-			bool hasSender = line.StartsWith(":");
+			var hasSender = line.StartsWith(":");
 
 			// Clean up the line a bit
 			if (hasSender)
@@ -58,14 +58,14 @@ namespace IRCSharp
 			}
 
 			// Split the line on spaces
-			List<String> splitLine = lineWithoutFinalArg.Split(' ').ToList<string>();
+			var splitLine = lineWithoutFinalArg.Split(' ').ToList<string>();
 
-			string command = (splitLine.Count >= 1 ? splitLine[0] : null);
+			var command = (splitLine.Count >= 1 ? splitLine[0] : null);
 
 			// Contains all arguments for the IRC command, except for the last argument. Usually contains just one argument.
-			string[] args = splitLine.GetRange(1, splitLine.Count - 1).ToArray();
+			var args = splitLine.GetRange(1, splitLine.Count - 1).ToArray();
 
-			return new IrcLine(sender, GetUserFromSender(sender), command, args, finalArg);
+			return new IrcLine(sender, GetUserFromSender(sender), command, args, finalArg, rawLine);
 		}
 	}
 }
