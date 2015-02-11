@@ -57,7 +57,6 @@ namespace IRCSharp
 		private Dictionary<string, IrcChannel> channels = new Dictionary<string, IrcChannel>();
 		private readonly IrcProtocolParser parser = new IrcProtocolParser();
 		private NetLibClient client;
-		private EventProcessor processor;
 
 		public const string Version = "2.1";
 		private const int PingTimeout = 200;
@@ -117,7 +116,7 @@ namespace IRCSharp
 		private void HandleLogEvent(string message)
 		{
 			if (OnNetLibDebugLog != null) {
-				OnNetLibDebugLog(message);
+				OnNetLibDebugLog(client, message);
 			}
 		}
 
@@ -141,8 +140,8 @@ namespace IRCSharp
 		/// </summary>
 		public void Connect(ConnectionInfo ci)
 		{
-			Log("Starting IRCSharp version " + Version);
-			Log("Using CsNetLib version " + NetLib.Version);
+			Log(this, "Starting IRCSharp version " + Version);
+			Log(this, "Using CsNetLib version " + NetLib.Version);
 
 			if (string.IsNullOrWhiteSpace(ci.Host))
 			// ReSharper disable NotResolvedInText
@@ -167,26 +166,36 @@ namespace IRCSharp
 		}
 		private void ConnectClient()
 		{
-			Log(string.Format("Connecting to {0}:{1}", RemoteHost, RemotePort));
+			Log(this, string.Format("Connecting to {0}:{1}", RemoteHost, RemotePort));
 			HookClientEvents();
 			client.Connect(RemoteHost, RemotePort);
-			SendRaw("NICK " + Nick);
-			SendRaw("USER " + Ident + " " + (invisible ? 8 : 0) + " * :" + RealName);
-			Log("Credentials sent");
-			var waitingTime = 0;
-			while (!Connected && waitingTime < 5000) {
-				Thread.Sleep(20);
-				waitingTime += 20;
-			}
-			if (Connected) {
-				Log("Connection to " + RemoteHost + " established.");
-			} else {
-				throw new Exception("Connection timed out");
-			}
+
+            Authenticate(Nick);
 
 			if (OnConnectionEstablished != null)
 				Task.Run(() => OnConnectionEstablished());
 		}
+
+	    private void Authenticate(string username)
+	    {
+            SendRaw("NICK " + username);
+            SendRaw("USER " + Ident + " " + (invisible ? 8 : 0) + " * :" + RealName);
+            Log(this, "Credentials sent");
+            var waitingTime = 0;
+            while (!Connected && waitingTime < 10000)
+            {
+                Thread.Sleep(20);
+                waitingTime += 20;
+            }
+            if (Connected)
+            {
+                Log(this, "Connection to " + RemoteHost + " established.");
+            }
+            else
+            {
+                throw new Exception("Connection timed out, took longer than 10 seconds to connect");
+            }
+	    }
 
 		public bool InChannel(string channel)
 		{
@@ -259,226 +268,268 @@ namespace IRCSharp
 			}
 		}
 
-		private void OnReceiveData(string line, long sender)
-		{
-			//Logger.Log(line, LogLevel.In);
+	    private void OnReceiveData(string line, long sender)
+	    {
+	        //Logger.Log(line, LogLevel.In);
 
-			if (line.StartsWith("PING")) {
-				ReplyToPing(line);
-				return;
-			}
-			var linef = parser.ParseIrcLine(line);
-			if (OnRawLineReceived != null) {
-				Task.Run(() => OnRawLineReceived(line));
-			}
-			ProcessIrcLine(linef);
-		}
+	        if (line.StartsWith("PING"))
+	        {
+	            ReplyToPing(line);
+	            return;
+	        }
+	        var linef = parser.ParseIrcLine(line);
+	        if (OnRawLineReceived != null)
+	        {
+	            Task.Run(() => OnRawLineReceived(line));
+	        }
+            ProcessIrcLine(linef);
+	    }
 
-		private void ProcessIrcLine(IrcLine line)
-		{
-			switch (line.Command) {
-				case "PRIVMSG":
-					ProcessPm(line);
-					break;
-				case "NOTICE":
-					ProcessNotice(line);
-					break;
-				case "NICK":
-					ProcessNickChange(line);
-					break;
-				case "KICK":
-					ProcessKick(line);
-					break;
-				case "JOIN":
-					ProcessJoin(line);
-					break;
-				case "353":
-					ProcessNameReply(line);
-					break;
-				case "PART":
-					ProcessPart(line);
-					break;
-				case "QUIT":
-					ProcessQuit(line);
-					break;
-				case "332":
-					ProcessTopic(line);
-					break;
-				case "333":
-					ProcessTopicSet(line);
-					break;
-				case "366":
-					ProcessEndOfNames(line);
-					break;
-				case "ERROR":
-					ProcessError(line);
-					break;
-				default:
-					if (OnFormattedLineReceived != null) {
-						Task.Run(() => OnFormattedLineReceived(line));
-					}
-					break;
-			}
-		}
+        private void ProcessIrcLine(IrcLine line)
+        {
+            switch (line.Command)
+            {
+                case "PRIVMSG":
+                    ProcessPm(line);
+                    break;
+                case "NOTICE":
+                    ProcessNotice(line);
+                    break;
+                case "NICK":
+                    ProcessNickChange(line);
+                    break;
+                case "KICK":
+                    ProcessKick(line);
+                    break;
+                case "JOIN":
+                    ProcessJoin(line);
+                    break;
+                case "353":
+                    ProcessNameReply(line);
+                    break;
+                case "PART":
+                    ProcessPart(line);
+                    break;
+                case "QUIT":
+                    ProcessQuit(line);
+                    break;
+                case "332":
+                    ProcessTopic(line);
+                    break;
+                case "333":
+                    ProcessTopicSet(line);
+                    break;
+                case "366":
+                    ProcessEndOfNames(line);
+                    break;
+                case "ERROR":
+                    ProcessError(line);
+                    break;
+                default:
+                    if (OnFormattedLineReceived != null)
+                    {
+                        Task.Run(() => OnFormattedLineReceived(line));
+                    }
+                    break;
+            }
+        }
 
-		private void ProcessError(IrcLine line)
-		{
-			if (OnErrorReceived != null) {
-				Task.Run(() => OnErrorReceived(line.FinalArgument));
-			}
-		}
+        private void ProcessError(IrcLine line)
+        {
+            if (OnErrorReceived != null)
+            {
+                Task.Run(() => OnErrorReceived(line.FinalArgument));
+            }
+        }
 
-		private void ProcessEndOfNames(IrcLine line)
-		{
-			if (OnNamesKnown != null) {
-				Task.Run(() => OnNamesKnown(channels[line.Arguments[1]]));
-			}
-		}
+        private void ProcessEndOfNames(IrcLine line)
+        {
+            if (OnNamesKnown != null)
+            {
+                Task.Run(() => OnNamesKnown(channels[line.Arguments[1]]));
+            }
+        }
 
-		private void ProcessTopicSet(IrcLine line)
-		{
-			int seconds;
-			int.TryParse(line.Arguments[3], out seconds);
-			if (OnTopicSet != null) {
-				Task.Run(() => OnTopicSet(line.Arguments[1], parser.GetUserFromSender(line.Arguments[2]), new DateTime(1970,1,1,0,0,0,0,DateTimeKind.Utc).AddSeconds(seconds)));
-			}
-		}
+        private void ProcessTopicSet(IrcLine line)
+        {
+            int seconds;
+            int.TryParse(line.Arguments[3], out seconds);
+            if (OnTopicSet != null)
+            {
+                Task.Run(() => OnTopicSet(line.Arguments[1], parser.GetUserFromSender(line.Arguments[2]), new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc).AddSeconds(seconds)));
+            }
+        }
 
-		private void ProcessTopic(IrcLine line)
-		{
-			if (OnTopicReceived != null) {
-				Task.Run(() => OnTopicReceived(line.Arguments[1], line.FinalArgument));
-			}
-		}
+        private void ProcessTopic(IrcLine line)
+        {
+            if (OnTopicReceived != null)
+            {
+                Task.Run(() => OnTopicReceived(line.Arguments[1], line.FinalArgument));
+            }
+        }
 
-		private void ProcessQuit(IrcLine line)
-		{
-			if (OnQuit != null) {
-				Task.Run(() => OnQuit(parser.GetUserFromSender(line.Sender), line.FinalArgument));
-			}
-		}
+        private void ProcessQuit(IrcLine line)
+        {
+            if (OnQuit != null)
+            {
+                Task.Run(() => OnQuit(parser.GetUserFromSender(line.Sender), line.FinalArgument));
+            }
+        }
 
-		private void ProcessNotice(IrcLine line)
-		{
-			if (OnNoticeReceived != null) {
-				Task.Run(() => OnNoticeReceived(parser.GetUserFromSender(line.Sender), line.FinalArgument));
-			}
-		}
+        private void ProcessNotice(IrcLine line)
+        {
+            if (OnNoticeReceived != null)
+            {
+                Task.Run(() => OnNoticeReceived(parser.GetUserFromSender(line.Sender), line.FinalArgument));
+            }
+        }
 
-		private void ProcessNameReply(IrcLine line)
-		{
-			var channelName = line.Arguments[2];
-			IrcChannel channel;
-			try {
-				channel = channels[channelName];
-			} catch (KeyNotFoundException) {
-				Log("Unable to process name reply: channel not found");
-				return;
-			}
-			var users = line.FinalArgument.Split(' ');
-			foreach (var user in users) {
-				if (user.StartsWith("@")) {
-					channel.AddUser(user.Substring(1), IrcPermissionLevel.Operator);
-				} else if (user.StartsWith("+")) {
-					channel.AddUser(user.Substring(1), IrcPermissionLevel.Voiced);
-				} else {
-					channel.AddUser(user, IrcPermissionLevel.Default);
-				}
-			}
-		}
-		private void ProcessPart(IrcLine line)
-		{
-			var sender = parser.GetUserFromSender(line.Sender);
-			if (sender.Nick == Nick) {
-				channels.Remove(line.Arguments[0]);
-				if (OnPartedChannel != null) {
-					Task.Run(() => OnPartedChannel(line.Arguments[0]));
-				}
-			} else {
-				channels[line.Arguments[0]].RemoveUser(sender.Nick);
-				if (OnPartChannel != null) {
-					Task.Run(() => OnPartChannel(sender, line.Arguments[0]));
-				}
-			}
-		}
-		private void ProcessJoin(IrcLine line)
-		{
-			var sender = parser.GetUserFromSender(line.Sender);
-			if (sender.Nick == Nick) {
-				if (Ident != sender.Ident) {
-					Log(string.Format("Warning: Real ident ({0}) differs from requested ident ({1}). Ident field changed according to real ident", sender.Ident, Ident));
-					Ident = sender.Ident;
-				}
-				if (LocalHost == null) {
-					Log("Hostmask detected as " + sender.Hostmask);
-					LocalHost = sender.Hostmask;
-				}
+        private void ProcessNameReply(IrcLine line)
+        {
+            var channelName = line.Arguments[2];
+            IrcChannel channel;
+            try
+            {
+                channel = channels[channelName];
+            }
+            catch (KeyNotFoundException)
+            {
+                Log(this, "Unable to process name reply: channel not found");
+                return;
+            }
+            var users = line.FinalArgument.Split(' ');
+            foreach (var user in users)
+            {
+                if (user.StartsWith("@"))
+                {
+                    channel.AddUser(user.Substring(1), IrcPermissionLevel.Operator);
+                }
+                else if (user.StartsWith("+"))
+                {
+                    channel.AddUser(user.Substring(1), IrcPermissionLevel.Voiced);
+                }
+                else
+                {
+                    channel.AddUser(user, IrcPermissionLevel.Default);
+                }
+            }
+        }
+        private void ProcessPart(IrcLine line)
+        {
+            var sender = parser.GetUserFromSender(line.Sender);
+            if (sender.Nick == Nick)
+            {
+                channels.Remove(line.Arguments[0]);
+                if (OnPartedChannel != null)
+                {
+                    Task.Run(() => OnPartedChannel(line.Arguments[0]));
+                }
+            }
+            else
+            {
+                channels[line.Arguments[0]].RemoveUser(sender.Nick);
+                if (OnPartChannel != null)
+                {
+                    Task.Run(() => OnPartChannel(sender, line.Arguments[0]));
+                }
+            }
+        }
+        private void ProcessJoin(IrcLine line)
+        {
+            var sender = parser.GetUserFromSender(line.Sender);
+            if (sender.Nick == Nick)
+            {
+                if (Ident != sender.Ident)
+                {
+                    Log(this, string.Format("Warning: Real ident ({0}) differs from requested ident ({1}). Ident field changed according to real ident", sender.Ident, Ident));
+                    Ident = sender.Ident;
+                }
+                if (LocalHost == null)
+                {
+                    Log(this, "Hostmask detected as " + sender.Hostmask);
+                    LocalHost = sender.Hostmask;
+                }
 
-				if (channels.ContainsKey(line.Arguments[0])) {
-					throw new InvalidOperationException("Received a JOIN for " + line.Arguments[0] + " whil already in this channel.");
-				}
-				channels.Add(line.Arguments[0], new IrcChannel(line.Arguments[0]));
-				if (OnJoinedChannel != null) {
-					Task.Run(() => OnJoinedChannel(line.Arguments[0]));
-				}
-			} else {
-				channels[line.Arguments[0]].AddUser(sender.Nick, IrcPermissionLevel.Default);
-				if (OnJoinChannel != null) {
-					Task.Run(() => OnJoinChannel(sender, line.Arguments[0]));
-				}
-			}
-		}
-		private void ProcessKick(IrcLine line)
-		{
-			var sender = parser.GetUserFromSender(line.Sender);
-			if (line.Arguments[1].Equals(Nick)) {
-				channels.Remove(line.Arguments[0]);
-				if (OnKicked != null) {
-					Task.Run(() => OnKicked(line.Arguments[0], line.FinalArgument, sender));
-				}
-			} else if (OnKick != null) {
+                if (channels.ContainsKey(line.Arguments[0]))
+                {
+                    throw new InvalidOperationException("Received a JOIN for " + line.Arguments[0] + " whil already in this channel.");
+                }
+                channels.Add(line.Arguments[0], new IrcChannel(line.Arguments[0]));
+                if (OnJoinedChannel != null)
+                {
+                    Task.Run(() => OnJoinedChannel(line.Arguments[0]));
+                }
+            }
+            else
+            {
+                channels[line.Arguments[0]].AddUser(sender.Nick, IrcPermissionLevel.Default);
+                if (OnJoinChannel != null)
+                {
+                    Task.Run(() => OnJoinChannel(sender, line.Arguments[0]));
+                }
+            }
+        }
+        private void ProcessKick(IrcLine line)
+        {
+            var sender = parser.GetUserFromSender(line.Sender);
+            if (line.Arguments[1].Equals(Nick))
+            {
+                channels.Remove(line.Arguments[0]);
+                if (OnKicked != null)
+                {
+                    Task.Run(() => OnKicked(line.Arguments[0], line.FinalArgument, sender));
+                }
+            }
+            else if (OnKick != null)
+            {
 
-				Task.Run(() => OnKick(line.Arguments[1], line.Arguments[0], line.FinalArgument, sender));
-			}
-		}
-		public IrcChannel[] GetChannels()
-		{
-			return channels.Values.ToArray();
-		}
-		private void ProcessNickChange(IrcLine line)
-		{
-			if (line.User.Nick == Nick) {
-				Nick = line.FinalArgument;
-				if (OnNickChanged != null) {
-					Task.Run(() => OnNickChanged(line.FinalArgument));
-				}
-			} else {
-				if (OnNickChange != null) {
-					Task.Run(() => OnNickChange(parser.GetUserFromSender(line.Sender), line.FinalArgument));
-				}
-			}
-		}
-		private void ProcessPm(IrcLine line)
-		{
-			const string actionSequence = "\u0001ACTION";
+                Task.Run(() => OnKick(line.Arguments[1], line.Arguments[0], line.FinalArgument, sender));
+            }
+        }
+        public IrcChannel[] GetChannels()
+        {
+            return channels.Values.ToArray();
+        }
+        private void ProcessNickChange(IrcLine line)
+        {
+            if (line.User.Nick == Nick)
+            {
+                Nick = line.FinalArgument;
+                if (OnNickChanged != null)
+                {
+                    Task.Run(() => OnNickChanged(line.FinalArgument));
+                }
+            }
+            else
+            {
+                if (OnNickChange != null)
+                {
+                    Task.Run(() => OnNickChange(parser.GetUserFromSender(line.Sender), line.FinalArgument));
+                }
+            }
+        }
+        private void ProcessPm(IrcLine line)
+        {
+            const string actionSequence = "\u0001ACTION";
 
-			var action = false;
+            var action = false;
 
-			if (line.FinalArgument.StartsWith(actionSequence)) {
-				action = true;
-				var message = line.FinalArgument;
-				message = message.Substring(8, message.Length - 9);
-				line.FinalArgument = message;
-			}
+            if (line.FinalArgument.StartsWith(actionSequence))
+            {
+                action = true;
+                var message = line.FinalArgument;
+                message = message.Substring(8, message.Length - 9);
+                line.FinalArgument = message;
+            }
 
-			if (OnMessageReceived == null) return;
+            if (OnMessageReceived == null) return;
 
-			var sender = parser.GetUserFromSender(line.Sender);
-			var channel = line.Arguments[0] == Nick ? sender.Nick : line.Arguments[0];
-			var msg = new IrcMessage(sender, channel, line.FinalArgument, action);
+            var sender = parser.GetUserFromSender(line.Sender);
+            var channel = line.Arguments[0] == Nick ? sender.Nick : line.Arguments[0];
+            var msg = new IrcMessage(sender, channel, line.FinalArgument, action);
 
-			Task.Run(() => OnMessageReceived(msg));
-		}
+            Task.Run(() => OnMessageReceived(msg));
+        }
 
 		/// <summary>
 		/// Sends a raw IRC line to the server.
@@ -500,11 +551,11 @@ namespace IRCSharp
 			return result;
 		}
 
-		private void Log(string message)
+        private void Log(object sender, string message)
 		{
 			// We use a blocking call here, because it may be important that debug messages arrive in the right order.
 			if (OnDebugLog != null) {
-				OnDebugLog(message);
+				OnDebugLog(sender, message);
 			}
 		}
 
@@ -518,9 +569,9 @@ namespace IRCSharp
 		{
 
 			channelName = channelName.ToLower();
-			Log("Joining " + channelName);
+			Log(this, "Joining " + channelName);
 			SendRaw("JOIN :" + channelName);
-			Log("Join sent");
+			Log(this, "Join sent");
 			if (!validate) return true;
 
 			const int sleepTime = 50;
@@ -528,10 +579,10 @@ namespace IRCSharp
 			while (!channels.ContainsKey(channelName)) {
 				if (totalSleepTime > 1000) {
 					if (attemptNumber == MaxJoinAttempts) {
-						Log(string.Format("Maximum number of attempts to join {0} reached, channel not joined.", channelName));
+						Log(this, string.Format("Maximum number of attempts to join {0} reached, channel not joined.", channelName));
 						return false;
 					}
-					Log(string.Format("Attempt to join {0} failed, retrying.", channelName));
+					Log(this, string.Format("Attempt to join {0} failed, retrying.", channelName));
 					return JoinChannel(channelName, true, ++attemptNumber);
 				}
 				Thread.Sleep(sleepTime);
@@ -600,6 +651,12 @@ namespace IRCSharp
 
 		private void HandleDisconnect(Exception reason)
 		{
+		    if (!Connected)
+		    {
+		        Log(this, "Ignoring disconnect event because the client has already disconnected.");
+                Log(this, string.Format("Connection lost ({0}: {1}) Attempting to reconnect...", reason.GetType().Name, reason.Message));
+		        return;
+		    }
 			Connected = false;
 			client.DisconnectWithoutEvent();
 			if (OnDisconnect == null) return;

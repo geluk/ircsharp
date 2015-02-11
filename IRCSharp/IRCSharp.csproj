@@ -41,7 +41,6 @@
   <ItemGroup>
     <Compile Include="ClientState.cs" />
     <Compile Include="ConnectionInfo.cs" />
-    <Compile Include="EventProcessor.cs" />
     <Compile Include="IRC\IrcChannel.cs" />
     <Compile Include="IrcClient.cs" />
     <Compile Include="IrcEvents.cs" />
