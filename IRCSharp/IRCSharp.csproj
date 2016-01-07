@@ -29,6 +29,13 @@
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
+  <PropertyGroup>
+    <SignAssembly>true</SignAssembly>
+  </PropertyGroup>
+  <PropertyGroup>
+    <AssemblyOriginatorKeyFile>
+    </AssemblyOriginatorKeyFile>
+  </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Core" />
@@ -53,7 +60,7 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\CsNetLib2\CsNetLib2\CsNetLib2.csproj">
+    <ProjectReference Include="..\CsNetLib2\CsNetLib2.csproj">
       <Project>{68170802-5de7-4f66-99c7-136b3c7dd93c}</Project>
       <Name>CsNetLib2</Name>
     </ProjectReference>
