@@ -80,6 +80,7 @@ namespace IRCSharp
         public string Ident { get; private set; }
         public string RealName { get; private set; }
         public IrcUser Self { get { return new IrcUser(Nick, Ident, LocalHost); } }
+        public string Password { get; private set; }
 
         private bool quitRequested;
         private bool invisible;
@@ -124,7 +125,7 @@ namespace IRCSharp
             }
         }
 
-        public void Connect(string host, int port, string nick, string ident = null, string realName = "IRCSharp", bool visible = false)
+        public void Connect(string host, int port, string nick, string ident = null, string password = null, string realName = "IRCSharp", bool visible = false)
         {
             Connect(
                 new ConnectionInfo
@@ -133,6 +134,7 @@ namespace IRCSharp
                     Port = port,
                     Nick = nick,
                     Ident = ident,
+                    Password = password,
                     RealName = realName,
                     Invisible = !visible
                 }
@@ -164,6 +166,7 @@ namespace IRCSharp
             Ident = ci.Ident ?? ci.Nick;
             RealName = ci.RealName;
             invisible = ci.Invisible;
+            Password = ci.Password;
 
             client = new NetLibClient(TransferProtocolType.Delimited, Encoding.UTF8);
 
@@ -183,6 +186,10 @@ namespace IRCSharp
 
         private void Authenticate(string username)
         {
+            if (!string.IsNullOrEmpty(Password))
+            {
+                SendRaw("PASS " + Password);
+            }
             SendRaw("NICK " + username);
             SendRaw("USER " + Ident + " " + (invisible ? 8 : 0) + " * :" + RealName);
             Log(this, "Credentials sent");
@@ -302,6 +309,9 @@ namespace IRCSharp
         {
             switch (line.Command)
             {
+                case "001":
+                    Connected = true;
+                    break;
                 case "PRIVMSG":
                     ProcessPm(line);
                     break;

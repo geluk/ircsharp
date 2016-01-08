@@ -8,5 +8,6 @@
 		public string Ident;
 		public string RealName;
 		public bool Invisible;
-	}
+        public string Password;
+    }
 }
