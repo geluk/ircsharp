@@ -125,7 +125,7 @@ namespace IRCSharp
             }
         }
 
-        public void Connect(string host, int port, string nick, string ident = null, string password = null, string realName = "IRCSharp", bool visible = false)
+        public void Connect(string host, int port, string nick, string ident = null, string realName = "IRCSharp", bool visible = false)
         {
             Connect(
                 new ConnectionInfo
@@ -134,7 +134,6 @@ namespace IRCSharp
                     Port = port,
                     Nick = nick,
                     Ident = ident,
-                    Password = password,
                     RealName = realName,
                     Invisible = !visible
                 }
@@ -170,8 +169,29 @@ namespace IRCSharp
 
             client = new NetLibClient(TransferProtocolType.Delimited, Encoding.UTF8);
 
-            ConnectClient();
+            if (ci.useTLS)
+            {
+                ConnectClientTLS(ci.verifyServerCertificate);
+            }
+            else
+            {
+                ConnectClient();
+            }
+            
         }
+
+        private void ConnectClientTLS(bool verifyServerCertificate)
+        {
+            Log(this, string.Format("Connecting securely to {0}:{1}", RemoteHost, RemotePort));
+            HookClientEvents();
+            client.ConnectSecure(RemoteHost, RemotePort, true, verifyServerCertificate);
+
+            Authenticate(Nick);
+
+            if (OnConnectionEstablished != null)
+                Task.Run(() => OnConnectionEstablished());
+        }
+
         private void ConnectClient()
         {
             Log(this, string.Format("Connecting to {0}:{1}", RemoteHost, RemotePort));
@@ -644,6 +664,11 @@ namespace IRCSharp
         /// <param name="message">The message to be sent.</param>
         public bool SendMessage(string target, string message)
         {
+            // Make sure any newline characters are stripped from the message.
+            // Replace \n with whitespace, otherwise two words might end up directly next to each other, with no space between them.
+            // By replacing only \n and not \r, we cover all lines terminated by \n and \r\n. Good enough for our purposes.
+            message = message.Replace('\n', ' ').Replace("\r", "");
+
             if (Connected)
             {
                 return SendRaw("PRIVMSG " + target + " :" + message);

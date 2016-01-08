@@ -9,5 +9,7 @@
 		public string RealName;
 		public bool Invisible;
         public string Password;
+        public bool useTLS;
+        public bool verifyServerCertificate;
     }
 }
