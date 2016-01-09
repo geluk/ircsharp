@@ -320,7 +320,7 @@ namespace IRCSharp
             var linef = IrcProtocolParser.ParseIrcLine(line);
             if (OnRawLineReceived != null)
             {
-                Task.Run(() => OnRawLineReceived(line));
+                OnRawLineReceived(line);
             }
             ProcessIrcLine(linef);
         }
@@ -371,7 +371,7 @@ namespace IRCSharp
                 default:
                     if (OnFormattedLineReceived != null)
                     {
-                        Task.Run(() => OnFormattedLineReceived(line));
+                        OnFormattedLineReceived(line);
                     }
                     break;
             }
@@ -381,7 +381,7 @@ namespace IRCSharp
         {
             if (OnErrorReceived != null)
             {
-                Task.Run(() => OnErrorReceived(line.FinalArgument));
+                OnErrorReceived(line.FinalArgument);
             }
         }
 
@@ -389,7 +389,7 @@ namespace IRCSharp
         {
             if (OnNamesKnown != null)
             {
-                Task.Run(() => OnNamesKnown(Channels[line.Arguments[1]]));
+                OnNamesKnown(Channels[line.Arguments[1]]);
             }
         }
 
@@ -399,7 +399,7 @@ namespace IRCSharp
             int.TryParse(line.Arguments[3], out seconds);
             if (OnTopicSet != null)
             {
-                Task.Run(() => OnTopicSet(line.Arguments[1], IrcProtocolParser.GetUserFromSender(line.Arguments[2]), new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc).AddSeconds(seconds)));
+                OnTopicSet(line.Arguments[1], IrcProtocolParser.GetUserFromSender(line.Arguments[2]), new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc).AddSeconds(seconds));
             }
         }
 
@@ -407,7 +407,7 @@ namespace IRCSharp
         {
             if (OnTopicReceived != null)
             {
-                Task.Run(() => OnTopicReceived(line.Arguments[1], line.FinalArgument));
+                OnTopicReceived(line.Arguments[1], line.FinalArgument);
             }
         }
 
@@ -415,7 +415,7 @@ namespace IRCSharp
         {
             if (OnQuit != null)
             {
-                Task.Run(() => OnQuit(IrcProtocolParser.GetUserFromSender(line.Sender), line.FinalArgument));
+                OnQuit(IrcProtocolParser.GetUserFromSender(line.Sender), line.FinalArgument);
             }
         }
 
@@ -423,7 +423,7 @@ namespace IRCSharp
         {
             if (OnNoticeReceived != null)
             {
-                Task.Run(() => OnNoticeReceived(IrcProtocolParser.GetUserFromSender(line.Sender), line.FinalArgument));
+                OnNoticeReceived(IrcProtocolParser.GetUserFromSender(line.Sender), line.FinalArgument);
             }
         }
 
@@ -465,7 +465,7 @@ namespace IRCSharp
                 Channels.Remove(line.Arguments[0]);
                 if (OnPartedChannel != null)
                 {
-                    Task.Run(() => OnPartedChannel(line.Arguments[0]));
+                    OnPartedChannel(line.Arguments[0]);
                 }
             }
             else
@@ -473,7 +473,7 @@ namespace IRCSharp
                 Channels[line.Arguments[0]].RemoveUser(sender.Nick);
                 if (OnPartChannel != null)
                 {
-                    Task.Run(() => OnPartChannel(sender, line.Arguments[0]));
+                    OnPartChannel(sender, line.Arguments[0]);
                 }
             }
         }
@@ -500,7 +500,7 @@ namespace IRCSharp
                 Channels.Add(line.Arguments[0], new IrcChannel(line.Arguments[0]));
                 if (OnJoinedChannel != null)
                 {
-                    Task.Run(() => OnJoinedChannel(line.Arguments[0]));
+                    OnJoinedChannel(line.Arguments[0]);
                 }
             }
             else
@@ -508,7 +508,7 @@ namespace IRCSharp
                 Channels[line.Arguments[0]].AddUser(sender.Nick, IrcPermissionLevel.Default);
                 if (OnJoinChannel != null)
                 {
-                    Task.Run(() => OnJoinChannel(sender, line.Arguments[0]));
+                    OnJoinChannel(sender, line.Arguments[0]);
                 }
             }
         }
@@ -520,13 +520,13 @@ namespace IRCSharp
                 Channels.Remove(line.Arguments[0]);
                 if (OnKicked != null)
                 {
-                    Task.Run(() => OnKicked(line.Arguments[0], line.FinalArgument, sender));
+                    OnKicked(line.Arguments[0], line.FinalArgument, sender);
                 }
             }
             else if (OnKick != null)
             {
 
-                Task.Run(() => OnKick(line.Arguments[1], line.Arguments[0], line.FinalArgument, sender));
+                OnKick(line.Arguments[1], line.Arguments[0], line.FinalArgument, sender);
             }
         }
         public IrcChannel[] GetChannels()
@@ -540,14 +540,14 @@ namespace IRCSharp
                 Nick = line.FinalArgument;
                 if (OnNickChanged != null)
                 {
-                    Task.Run(() => OnNickChanged(line.FinalArgument));
+                    OnNickChanged(line.FinalArgument);
                 }
             }
             else
             {
                 if (OnNickChange != null)
                 {
-                    Task.Run(() => OnNickChange(IrcProtocolParser.GetUserFromSender(line.Sender), line.FinalArgument));
+                    OnNickChange(IrcProtocolParser.GetUserFromSender(line.Sender), line.FinalArgument);
                 }
             }
         }
@@ -561,7 +561,7 @@ namespace IRCSharp
             var msg = new IrcMessage(sender, channel, parsedMessage, action);
 
             if (OnMessageReceived == null) return;
-            Task.Run(() => OnMessageReceived(msg));
+            OnMessageReceived(msg);
         }
 
         /// <summary>
