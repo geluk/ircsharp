@@ -9,6 +9,7 @@ using CsNetLib2;
 using CsNetLib2.Transfer;
 using IRCSharp.Annotations;
 using IRCSharp.IRC;
+using IRCSharp.IrcCommandProcessors;
 
 namespace IRCSharp
 {
@@ -42,6 +43,8 @@ namespace IRCSharp
         public event TopicSetEvent OnTopicSet; // Client receives the date and time on which a topic was set, and by whom it was set
         public event NamesKnownEvent OnNamesKnown; // Client has received all the names of the users inside a channel
         public event ErrorReceivedEvent OnErrorReceived; // Client receives an error
+
+		public List<DataProcessor> DataProcessors = new List<DataProcessor>(); 
 
         public event LocalPortKnownEvent OnLocalPortKnown
         {
@@ -310,14 +313,28 @@ namespace IRCSharp
 
         private void OnReceiveData(string line, long sender)
         {
-            //Logger.Log(line, LogLevel.In);
+			// Before doing anything, we'll give any preprocessors a chance to alter the incoming line
+			// if they deem it necessary.
+	        foreach (var processor in DataProcessors)
+	        {
+		        line = processor.PreProcessLine(line);
+	        }
 
+			// There's no need to expose a public API for pings, so we can return immediately after handling them.
             if (line.StartsWith("PING"))
             {
                 ReplyToPing(line);
                 return;
             }
+
             var linef = IrcProtocolParser.ParseIrcLine(line);
+
+			// Now we'll give the postprocessors a chance to alter the incoming line.
+	        foreach (var processor in DataProcessors)
+	        {
+		        linef = processor.PostProcessLine(linef);
+	        }
+
             if (OnRawLineReceived != null)
             {
                 OnRawLineReceived(line);
@@ -559,6 +576,10 @@ namespace IRCSharp
             // If it's a private message, the target field will be the client's nick. Otherwise, it will be a channel name.
             var channel = line.Arguments[0] == Nick ? sender.Nick : line.Arguments[0];
             var msg = new IrcMessage(sender, channel, parsedMessage, action);
+	        foreach (var processor in DataProcessors)
+	        {
+		        msg = processor.ProcessMessage(msg);
+	        }
 
             if (OnMessageReceived == null) return;
             OnMessageReceived(msg);
