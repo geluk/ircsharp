@@ -348,6 +348,10 @@ namespace IRCSharp
 			{
 				case "001":
 					Connected = true;
+					if (OnFormattedLineReceived != null)
+					{
+						OnFormattedLineReceived(line);
+					}
 					break;
 				case "PRIVMSG":
 					ProcessPm(line);
@@ -627,7 +631,6 @@ namespace IRCSharp
 			channelName = channelName.ToLower();
 			Log(this, "Joining " + channelName);
 			SendRaw("JOIN :" + channelName);
-			Log(this, "Join sent");
 			if (!validate) return true;
 
 			const int sleepTime = 50;
