@@ -28,8 +28,8 @@ namespace IRCSharp.IrcCommandProcessors.Quirks
 		{
 			var newMessage = RecuriveReplace(message.Message, @"^(.*?)(https?:\/\/)(.*?)( )(.*)$", "$1slack-workaround://$3$5");
 			newMessage = newMessage.Replace("slack-workaround://", "http://");
-			newMessage = RecuriveReplace(newMessage, @"^(.*? |)(.+)( https?:\/\/\2)(.*)$", "$1$2$4");
-
+			newMessage = RecuriveReplace(newMessage, @"^(.*? |)(.+)( https?:\/\/\2)(.*)$", "$1slack-workaround://$2$4");
+			newMessage = newMessage.Replace("slack-workaround://", "");
 			return new IrcMessage
 			{
 				Action = message.Action,
