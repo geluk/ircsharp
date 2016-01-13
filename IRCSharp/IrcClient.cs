@@ -66,24 +66,19 @@ namespace IRCSharp
 		public int MaxJoinAttempts = 8;
 
 		public bool ReplyToPings { get; set; }
-		public int ChannelCount { get { return Channels.Count; } }
-		public int TotalUserCount
-		{
-			get
-			{
-				return Channels.Sum(pair => pair.Value.UserCount);
-			}
-		}
+		public int ChannelCount => Channels.Count;
 
-		public bool Connected { get; private set; }
+	    public int TotalUserCount => Channels.Sum(pair => pair.Value.UserCount);
+
+	    public bool Connected { get; private set; }
 		public string RemoteHost { get; private set; }
 		public int RemotePort { get; private set; }
 		public string LocalHost { get; private set; }
 		public string Nick { get; private set; }
 		public string Ident { get; private set; }
 		public string RealName { get; private set; }
-		public IrcUser Self { get { return new IrcUser(Nick, Ident, LocalHost); } }
-		public string Password { get; private set; }
+		public IrcUser Self => new IrcUser(Nick, Ident, LocalHost);
+	    public string Password { get; private set; }
 
 		private bool quitRequested;
 		private bool invisible;
@@ -122,13 +117,10 @@ namespace IRCSharp
 
 		private void HandleLogEvent(string message)
 		{
-			if (OnNetLibDebugLog != null)
-			{
-				OnNetLibDebugLog(client, message);
-			}
+		    OnNetLibDebugLog?.Invoke(client, message);
 		}
 
-		public void Connect(string host, int port, string nick, string ident = null, string realName = "IRCSharp", bool visible = false)
+	    public void Connect(string host, int port, string nick, string ident = null, string realName = "IRCSharp", bool visible = false)
 		{
 			Connect(
 				new ConnectionInfo
