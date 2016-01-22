@@ -1,11 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Text;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-using System.Xml.Schema;
+﻿using System.Text.RegularExpressions;
 using IRCSharp.IRC;
 
 namespace IRCSharp.IrcCommandProcessors.Quirks
