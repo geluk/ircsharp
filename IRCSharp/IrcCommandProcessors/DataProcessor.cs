@@ -9,6 +9,11 @@ namespace IRCSharp.IrcCommandProcessors
 			return rawLine;
 		}
 
+		public virtual string PostProcessOutgoingMessage(string message)
+		{
+			return message;
+		}
+
 		public virtual IrcLine PostProcessLine(IrcLine line)
 		{
 			return line;

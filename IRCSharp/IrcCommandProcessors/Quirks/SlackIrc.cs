@@ -21,6 +21,12 @@ namespace IRCSharp.IrcCommandProcessors.Quirks
 			return newMessage;
 		}
 
+		public override string PostProcessOutgoingMessage(string message)
+		{
+			// Simple workaround for turning IRC formatting into Slack-compatible formatting.
+			return message.Replace('\u001d', '_').Replace('\u0002', '*');
+		}
+
 		public override IrcMessage ProcessMessage(IrcMessage message)
 		{
 			// Whenever it encounters a URL, the Slack IRC relay does two things:

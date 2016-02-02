@@ -684,6 +684,11 @@ namespace IRCSharp
 			// By replacing only \n and not \r, we cover all lines terminated by \n and \r\n. Good enough for our purposes.
 			message = message.Replace('\n', ' ').Replace("\r", "");
 
+			foreach (var processor in DataProcessors)
+			{
+				message = processor.PostProcessOutgoingMessage(message);
+			}
+
 			if (Connected)
 			{
 				return SendRaw("PRIVMSG " + target + " :" + message);
