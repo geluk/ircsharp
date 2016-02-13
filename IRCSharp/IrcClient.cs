@@ -300,7 +300,7 @@ namespace IRCSharp
 		/// <param name="messageNumber">Indicates that the message about to be sent
 		/// will be the nth message.  Because this is a numbering scheme (not indexing),
 		/// it starts at one. If a message gets chopped up, the second part will
-		/// have messageNumber = 2, for the tird part it will be 3, and so on.</param>
+		/// have messageNumber = 2, for the third part it will be 3, and so on.</param>
 		/// <returns></returns>
 		private MessageSendResult SendMessageChunk(string target, string message, int messageNumber = 1)
 		{
@@ -310,7 +310,7 @@ namespace IRCSharp
 			}
 			string cutoff = null;
 			// CAVEAT: C# uses UTF-16 strings, but IRC uses UTF-8. Therefore, a charcter with a code point
-			// low enough to be a single byte in UTF-16 yet high enough to require two bytes in UTF-8
+			// low enough to be a single char in UTF-16 yet high enough to require two chars in UTF-8
 			// will be incorrectly reported to have a length of one byte. Unfortunately there is no easy
 			// way to fix this because we don't know how to chop up Unicode messages byte-by-byte.
 			// At some point this should get looked at, but if we're going to implement support for that,
