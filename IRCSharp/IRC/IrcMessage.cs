@@ -1,12 +1,11 @@
-﻿
-namespace IRCSharp.IRC
+﻿namespace IRCSharp.IRC
 {
-	public struct IrcMessage
+	public class IrcMessage
 	{
-		public IrcUser Sender;
-		public string Channel;
-		public string Message;
-		public bool Action;
+		public IrcUser Sender { get; }
+		public string Channel { get; }
+		public string Message { get; set; }
+		public bool Action { get; }
 
 		public IrcMessage(IrcUser sender, string channel, string message, bool action = false)
 		{

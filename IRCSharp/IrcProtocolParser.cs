@@ -5,8 +5,17 @@ using IRCSharp.IRC;
 
 namespace IRCSharp
 {
+	/// <summary>
+	/// Parses IRC command strings into objects.
+	/// </summary>
 	public static class IrcProtocolParser
 	{
+		/// <summary>
+		/// Generates an IrcUser object from an IRC-formatted username,
+		/// like user!ident@host.tld 
+		/// </summary>
+		/// <param name="sender">The username to be parsed.</param>
+		/// <returns></returns>
 		public static IrcUser GetUserFromSender(string sender)
 		{
 			if (sender == null)
@@ -29,6 +38,11 @@ namespace IRCSharp
 			}
 		}
 
+		/// <summary>
+		/// Checks whether a message uses the CTCP ACTION protocol to signify an action.
+		/// </summary>
+		/// <param name="message">The message to be checked. If it is an action, it will also be modified to remove the CTCP Action indicators.</param>
+		/// <returns>True if the message is an action, false if it is not.</returns>
 		public static bool ParseAction(ref string message)
 		{
 			const string actionSequence = "\u0001ACTION";
@@ -45,6 +59,11 @@ namespace IRCSharp
 			}
 		}
 
+		/// <summary>
+		/// Generates an IrcLine object from a raw IRC line.
+		/// </summary>
+		/// <param name="rawLine">The IRC line to be parsed.</param>
+		/// <returns></returns>
 		public static IrcLine ParseIrcLine(string rawLine)
 		{
 			var line = rawLine;

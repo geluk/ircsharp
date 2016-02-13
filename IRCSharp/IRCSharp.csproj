@@ -48,8 +48,9 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="ClientState.cs" />
+    <Compile Include="CommandProcessor.cs" />
     <Compile Include="ConnectionInfo.cs" />
+    <Compile Include="IrcClientProtocol.cs" />
     <Compile Include="IRC\IrcChannel.cs" />
     <Compile Include="IrcClient.cs" />
     <Compile Include="IrcEvents.cs" />
@@ -60,6 +61,8 @@
     <Compile Include="IRC\IrcPermissionLevel.cs" />
     <Compile Include="IrcCommandProcessors\DataProcessor.cs" />
     <Compile Include="IrcCommandProcessors\Quirks\SlackIrc.cs" />
+    <Compile Include="IRC\NickservInformation.cs" />
+    <Compile Include="MessageSendResult.cs" />
     <Compile Include="Properties\Annotations.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

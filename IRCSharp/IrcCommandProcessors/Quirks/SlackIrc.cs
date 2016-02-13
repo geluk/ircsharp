@@ -1,4 +1,5 @@
-﻿using System.Text.RegularExpressions;
+﻿using System.Runtime.Remoting.Channels;
+using System.Text.RegularExpressions;
 using IRCSharp.IRC;
 
 namespace IRCSharp.IrcCommandProcessors.Quirks
@@ -47,13 +48,7 @@ namespace IRCSharp.IrcCommandProcessors.Quirks
 			newMessage = RecursiveReplace(newMessage, @"^(.*? |)(.+)( https?:\/\/\2)(.*)$", "$1slack-workaround://$2$4");
 			newMessage = newMessage.Replace("slack-workaround://", "");
 
-			return new IrcMessage
-			{
-				Action = message.Action,
-				Channel = message.Channel,
-				Message = newMessage,
-				Sender = message.Sender
-			};
+			return new IrcMessage(message.Sender, message.Channel, newMessage, message.Action);
 		}
 	}
 }

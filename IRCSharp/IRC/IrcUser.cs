@@ -2,7 +2,7 @@
 
 namespace IRCSharp.IRC
 {
-	public struct IrcUser
+	public class IrcUser
 	{
 		public string Nick;
 		public string Ident;

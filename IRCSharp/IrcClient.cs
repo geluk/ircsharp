@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.Remoting.Messaging;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,21 +13,14 @@ using IRCSharp.IrcCommandProcessors;
 
 namespace IRCSharp
 {
-	public enum DisconnectReason
-	{
-		PingTimeout,
-		Other,
-		DisconnectOnRequest
-	}
-
 	public class IrcClient
 	{
 		public event ConnectionEstablishedEvent OnConnectionEstablished; // The client has established a connection with the IRC server
 		public event DebugLogEvent OnDebugLog;
 		public event DebugLogEvent OnNetLibDebugLog;
-		public event RawLineReceiveEvent OnRawLineReceived; // A raw IRC line is received
-		public event FormattedLineReceiveEvent OnFormattedLineReceived; // A formatted IRC line has been created
-		public event MessageReceiveEvent OnMessageReceived; // A message is received
+		public event RawLineReceivedEvent OnRawLineReceived; // A raw IRC line is received
+		public event FormattedLineReceivedEvent OnFormattedLineReceived; // A formatted IRC line has been created
+		public event MessageReceivedEvent OnMessageReceived; // A message is received
 		public event NickChangeEvent OnNickChange; // Someone changes their nick
 		public event NickChangedEvent OnNickChanged; // The client changes their nick
 		public event KickEvent OnKick; // Someone is kicked
@@ -37,102 +31,79 @@ namespace IRCSharp
 		public event PartChannelEvent OnPartChannel; // Someone parts a channel
 		public event JoinedChannelEvent OnJoinedChannel; // The client joins a channel
 		public event PartedChannelEvent OnPartedChannel; // The client parts a channel
-		public event NoticeReceiveEvent OnNoticeReceived; // Client receives a notice from the IRC server
-		public event TopicReceiveEvent OnTopicReceived; // Client receives the topic for a channel
+		public event NoticeReceivedEvent OnNoticeReceived; // Client receives a notice from the IRC server
+		public event TopicReceivedEvent OnTopicReceived; // Client receives the topic for a channel
 		public event TopicSetEvent OnTopicSet; // Client receives the date and time on which a topic was set, and by whom it was set
 		public event NamesKnownEvent OnNamesKnown; // Client has received all the names of the users inside a channel
 		public event ErrorReceivedEvent OnErrorReceived; // Client receives an error
+		public event WhoisResultReceivedEvent OnWhoisResultReceived; // Client receives a WHOIS reply
+		public event NickservInformationReceivedEvent OnNickservInformationReceived; // Client receives information about a user from NickServ
 
 		public List<DataProcessor> DataProcessors = new List<DataProcessor>();
 
-		public event LocalPortKnownEvent OnLocalPortKnown
-		{
-			add
-			{
-				client.OnLocalPortKnown += value;
-			}
-			remove
-			{
-				client.OnLocalPortKnown -= value;
-			}
-		}
-		// Maps channel names to IrcChannels
-		protected Dictionary<string, IrcChannel> Channels = new Dictionary<string, IrcChannel>();
-		private NetLibClient client;
+		internal Dictionary<string, IrcChannel> ChannelDict { get; } = new Dictionary<string, IrcChannel>();
+
+		public IReadOnlyList<IrcChannel> Channels => ChannelDict.Values.ToArray();
+
+		private IrcClientProtocol clientProtocol;
+		private CommandProcessor commandProcessor;
 
 		public const string Version = "2.1";
-		private const int pingTimeout = 200;
-		public int MaxJoinAttempts = 8;
-
-		public bool ReplyToPings { get; set; }
-		public int ChannelCount => Channels.Count;
-
-	    public int TotalUserCount => Channels.Sum(pair => pair.Value.UserCount);
-
-	    public bool Connected { get; private set; }
+		/// <summary>
+		/// Maximum number of times the client should attempt to rejoin a channel if it
+		/// doesn't manage to join the channel immediately.
+		/// </summary>
+		public int MaxJoinAttempts { get; set; } = 8;
+		/// <summary>
+		/// Maximum number of sub-messages a single message may be broken up into in order
+		/// to prevent it from getting cut off because it exceeds the message length limit.
+		/// </summary>
+		public int FloodLimit { get; set; } = 4;
+		/// <summary>
+		/// Maximum message length. According to the spec this is 512 bytes.
+		/// We subtract two to account for the \r\n terminator, leaving us with 510 bytes.
+		/// </summary>
+		public int MessageLengthLimit { get; set; }= 510;
+		/// <summary>
+		/// True if there is an active TCP connection between the IRC server and the 
+		/// client AND if there has been network activity less than 200 (default,
+		/// see <see cref="PingTimeout"/>) seconds ago.
+		/// </summary>
+		public bool Connected => clientProtocol.Connected;
+		/// <summary>
+		/// The hostname of the remote server.
+		/// </summary>
 		public string RemoteHost { get; private set; }
+		/// <summary>
+		/// The remote server port the client has connected to.
+		/// </summary>
 		public int RemotePort { get; private set; }
-		public string LocalHost { get; private set; }
-		public string Nick { get; private set; }
-		public string Ident { get; private set; }
+		/// <summary>
+		/// The hostname assigned to this client by the IRC server.
+		/// This may or may not match the host's actual hostname.
+		/// </summary>
+		public string LocalHost { get; internal set; }
+		/// <summary>
+		/// The nickname assigned to this client by the IRC server and (usually)
+		/// as it was requested by the client.
+		/// </summary>
+		public string Nick { get; internal set; }
+		/// <summary>
+		/// The ident of this client, as assigned by the IRC server.
+		/// This may or may not match the client's requested ident.
+		/// </summary>
+		public string Ident { get; internal set; }
+		/// <summary>
+		/// The real name reported by this client.
+		/// </summary>
 		public string RealName { get; private set; }
 		public IrcUser Self => new IrcUser(Nick, Ident, LocalHost);
-	    public string Password { get; private set; }
-
-		private bool quitRequested;
+		/// <summary>
+		/// The password that is used to connect to the IRC server.
+		/// </summary>
+		public string Password { get; private set; }
+		public bool QuitRequested { get; private set; }
 		private bool invisible;
-		private DateTime lastPing;
-		[UsedImplicitly]
-		private Timer timer;
-
-		public IrcClient()
-		{
-			ReplyToPings = true;
-			timer = new Timer(OnTimeoutCheck, null, 5000, 5000);
-		}
-
-		private void OnTimeoutCheck(object state)
-		{
-			if (!Connected || lastPing.Year == 1 || !((DateTime.Now - lastPing).TotalSeconds > pingTimeout)) return;
-			if (OnDisconnect != null)
-			{
-				DisconnectWithPingTimeout();
-			}
-		}
-
-		public void DisconnectWithPingTimeout()
-		{
-			client.DisconnectWithoutEvent();
-			Connected = false;
-			OnDisconnect(DisconnectReason.PingTimeout, null);
-		}
-
-		private void HookClientEvents()
-		{
-			client.OnDataAvailable += OnReceiveData;
-			client.OnLogEvent += HandleLogEvent;
-			client.OnDisconnect += HandleDisconnect;
-		}
-
-		private void HandleLogEvent(string message)
-		{
-		    OnNetLibDebugLog?.Invoke(client, message);
-		}
-
-	    public void Connect(string host, int port, string nick, string ident = null, string realName = "IRCSharp", bool visible = false)
-		{
-			Connect(
-				new ConnectionInfo
-				{
-					Host = host,
-					Port = port,
-					Nick = nick,
-					Ident = ident,
-					RealName = realName,
-					Invisible = !visible
-				}
-			);
-		}
 
 		/// <summary>
 		/// Connects to an IRC server using the specified parameters.
@@ -143,15 +114,11 @@ namespace IRCSharp
 			Log(this, "Using CsNetLib version " + NetLib.Version);
 
 			if (string.IsNullOrWhiteSpace(ci.Host))
-				// ReSharper disable NotResolvedInText
 				throw new ArgumentException("Settings value is empty or does not exist", "ci.Host");
 			if (string.IsNullOrWhiteSpace(ci.Nick))
 				throw new ArgumentException("Settings value is empty or does not exist", "ci.Nick");
 			if (string.IsNullOrWhiteSpace(ci.RealName))
-			{
 				throw new ArgumentException("Settings value is empty or does not exist", "ci.RealName");
-				// ReSharper restore NotResolvedInText
-			}
 
 			RemoteHost = ci.Host;
 			RemotePort = ci.Port;
@@ -161,590 +128,303 @@ namespace IRCSharp
 			invisible = ci.Invisible;
 			Password = ci.Password;
 
-			client = new NetLibClient(TransferProtocolType.Delimited, Encoding.UTF8);
+			clientProtocol = new IrcClientProtocol(this);
+			commandProcessor = new CommandProcessor(this);
 
-			if (ci.useTLS)
-			{
-				ConnectClientTLS(ci.verifyServerCertificate);
-			}
-			else
-			{
-				ConnectClient();
-			}
+			// Event plumbing
+			clientProtocol.OnDisconnect += OnDisconnect;
+			clientProtocol.OnDataAvailable += commandProcessor.OnReceiveData;
+			clientProtocol.OnNetLibDebugLog += (msg) => OnNetLibDebugLog?.Invoke(clientProtocol, msg);
+			clientProtocol.OnDebugLog += OnDebugLog;
+			// FORWARD ALL THE EVENTS
+			commandProcessor.OnPingReceived += clientProtocol.ReplyToPing;
+			commandProcessor.OnRawLineReceived += OnRawLineReceived;
+			commandProcessor.OnFormattedLineReceived += OnFormattedLineReceived;
+			commandProcessor.OnMessageReceived += OnMessageReceived;
+			commandProcessor.OnNickChange += OnNickChange;
+			commandProcessor.OnNickChanged += OnNickChanged;
+			commandProcessor.OnKick += OnKick;
+			commandProcessor.OnKicked += OnKicked;
+			commandProcessor.OnQuit += OnQuit;
+			commandProcessor.OnJoinChannel += OnJoinChannel;
+			commandProcessor.OnPartChannel += OnPartChannel;
+			commandProcessor.OnJoinedChannel += OnJoinedChannel;
+			commandProcessor.OnPartedChannel += OnPartedChannel;
+			commandProcessor.OnNoticeReceived += OnNoticeReceived;
+			commandProcessor.OnTopicReceived += OnTopicReceived;
+			commandProcessor.OnTopicSet += OnTopicSet;
+			commandProcessor.OnNamesKnown += OnNamesKnown;
+			commandProcessor.OnErrorReceived += OnErrorReceived;
+			commandProcessor.OnWhoisResultReceived += OnWhoisResultReceived;
+			commandProcessor.OnNickservInformationReceived += OnNickservInformationReceived;
 
-		}
-
-		private void ConnectClientTLS(bool verifyServerCertificate)
-		{
-			Log(this, string.Format("Connecting securely to {0}:{1}", RemoteHost, RemotePort));
-			HookClientEvents();
-			client.ConnectSecure(RemoteHost, RemotePort, true, verifyServerCertificate);
-
-			Authenticate(Nick);
+			clientProtocol.Connect(ci);
 
 			if (OnConnectionEstablished != null)
 				Task.Run(() => OnConnectionEstablished());
-		}
-
-		private void ConnectClient()
-		{
-			Log(this, string.Format("Connecting to {0}:{1}", RemoteHost, RemotePort));
-			HookClientEvents();
-			client.Connect(RemoteHost, RemotePort);
-
-			Authenticate(Nick);
-
-			if (OnConnectionEstablished != null)
-				Task.Run(() => OnConnectionEstablished());
-		}
-
-		private void Authenticate(string username)
-		{
-			if (!string.IsNullOrEmpty(Password))
-			{
-				SendRaw("PASS " + Password);
-			}
-			SendRaw("NICK " + username);
-			SendRaw("USER " + Ident + " " + (invisible ? 8 : 0) + " * :" + RealName);
-			Log(this, "Credentials sent");
-			var waitingTime = 0;
-			while (!Connected && waitingTime < 10000)
-			{
-				Thread.Sleep(20);
-				waitingTime += 20;
-			}
-			if (Connected)
-			{
-				Log(this, "Connection to " + RemoteHost + " established.");
-			}
-			else
-			{
-				throw new Exception("Connection timed out, took longer than 10 seconds to connect");
-			}
-		}
-
-		public bool InChannel(string channel)
-		{
-			return Channels.ContainsKey(channel);
-		}
-
-		public void ChangeNick(string nick)
-		{
-			SendRaw("NICK :" + nick);
-			Nick = nick;
-		}
-
-		public void Part(string channel, string reason = null)
-		{
-			if (reason == null)
-			{
-				SendRaw("PART " + channel);
-			}
-			else
-			{
-				SendRaw(String.Format("PART {0} :{1}", channel, reason));
-			}
-			Channels.Remove(channel);
-		}
-
-		public void Quit(string reason = null)
-		{
-			if (reason == null)
-			{
-				SendRaw("QUIT");
-			}
-			else
-			{
-				var line = "QUIT :" + reason;
-				SendRaw(line);
-			}
-			quitRequested = true;
-			while (Connected)
-			{
-				Thread.Sleep(1);
-			}
-		}
-
-		public ClientState GetClientState()
-		{
-			return new ClientState
-			{
-				Ident = Ident,
-				LocalHost = LocalHost,
-				RemoteHost = RemoteHost,
-				RemotePort = RemotePort,
-				Nick = Nick,
-				RealName = RealName,
-				Channels = Channels
-			};
-		}
-
-		private void SetClientState(ClientState state)
-		{
-			Ident = state.Ident;
-			LocalHost = state.LocalHost;
-			RemoteHost = state.RemoteHost;
-			Nick = state.Nick;
-			RealName = state.RealName;
-			Channels = state.Channels;
-		}
-
-
-
-		private void ReplyToPing(string line)
-		{
-			lastPing = DateTime.Now;
-			Connected = true;
-			if (ReplyToPings)
-			{
-				var response = "PONG :" + line.Substring("PING :".Length);
-				SendRaw(response);
-			}
-		}
-
-		private void OnReceiveData(string line, long sender)
-		{
-			// Before doing anything, we'll give any preprocessors a chance to alter the incoming line
-			// if they deem it necessary.
-			foreach (var processor in DataProcessors)
-			{
-				line = processor.PreProcessLine(line);
-			}
-
-			// There's no need to expose a public API for pings, so we can return immediately after handling them.
-			if (line.StartsWith("PING"))
-			{
-				ReplyToPing(line);
-				return;
-			}
-
-			var linef = IrcProtocolParser.ParseIrcLine(line);
-
-			// Now we'll give the postprocessors a chance to alter the incoming line.
-			foreach (var processor in DataProcessors)
-			{
-				linef = processor.PostProcessLine(linef);
-			}
-
-			if (OnRawLineReceived != null)
-			{
-				OnRawLineReceived(line);
-			}
-			ProcessIrcLine(linef);
-		}
-
-		private void ProcessIrcLine(IrcLine line)
-		{
-			switch (line.Command)
-			{
-				case "001":
-					Connected = true;
-					if (OnFormattedLineReceived != null)
-					{
-						OnFormattedLineReceived(line);
-					}
-					break;
-				case "PRIVMSG":
-					ProcessPm(line);
-					break;
-				case "NOTICE":
-					ProcessNotice(line);
-					break;
-				case "NICK":
-					ProcessNickChange(line);
-					break;
-				case "KICK":
-					ProcessKick(line);
-					break;
-				case "JOIN":
-					ProcessJoin(line);
-					break;
-				case "353":
-					ProcessNameReply(line);
-					break;
-				case "PART":
-					ProcessPart(line);
-					break;
-				case "QUIT":
-					ProcessQuit(line);
-					break;
-				case "332":
-					ProcessTopic(line);
-					break;
-				case "333":
-					ProcessTopicSet(line);
-					break;
-				case "366":
-					ProcessEndOfNames(line);
-					break;
-				case "ERROR":
-					ProcessError(line);
-					break;
-				default:
-					if (OnFormattedLineReceived != null)
-					{
-						OnFormattedLineReceived(line);
-					}
-					break;
-			}
-		}
-
-		private void ProcessError(IrcLine line)
-		{
-			if (OnErrorReceived != null)
-			{
-				OnErrorReceived(line.FinalArgument);
-			}
-		}
-
-		private void ProcessEndOfNames(IrcLine line)
-		{
-			if (OnNamesKnown != null)
-			{
-				OnNamesKnown(Channels[line.Arguments[1]]);
-			}
-		}
-
-		private void ProcessTopicSet(IrcLine line)
-		{
-			int seconds;
-			int.TryParse(line.Arguments[3], out seconds);
-			if (OnTopicSet != null)
-			{
-				OnTopicSet(line.Arguments[1], IrcProtocolParser.GetUserFromSender(line.Arguments[2]), new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc).AddSeconds(seconds));
-			}
-		}
-
-		private void ProcessTopic(IrcLine line)
-		{
-			if (OnTopicReceived != null)
-			{
-				OnTopicReceived(line.Arguments[1], line.FinalArgument);
-			}
-		}
-
-		private void ProcessQuit(IrcLine line)
-		{
-			if (OnQuit != null)
-			{
-				OnQuit(IrcProtocolParser.GetUserFromSender(line.Sender), line.FinalArgument);
-			}
-		}
-
-		private void ProcessNotice(IrcLine line)
-		{
-			if (OnNoticeReceived != null)
-			{
-				OnNoticeReceived(IrcProtocolParser.GetUserFromSender(line.Sender), line.FinalArgument);
-			}
-		}
-
-		private void ProcessNameReply(IrcLine line)
-		{
-			var channelName = line.Arguments[2];
-			IrcChannel channel;
-			try
-			{
-				channel = Channels[channelName];
-			}
-			catch (KeyNotFoundException)
-			{
-				Log(this, "Unable to process name reply: channel not found");
-				return;
-			}
-			var users = line.FinalArgument.Split(' ');
-			foreach (var user in users)
-			{
-				if (user.StartsWith("@"))
-				{
-					channel.AddUser(user.Substring(1), IrcPermissionLevel.Operator);
-				}
-				else if (user.StartsWith("+"))
-				{
-					channel.AddUser(user.Substring(1), IrcPermissionLevel.Voiced);
-				}
-				else
-				{
-					channel.AddUser(user, IrcPermissionLevel.Default);
-				}
-			}
-		}
-		private void ProcessPart(IrcLine line)
-		{
-			var sender = IrcProtocolParser.GetUserFromSender(line.Sender);
-			if (sender.Nick == Nick)
-			{
-				Channels.Remove(line.Arguments[0]);
-				if (OnPartedChannel != null)
-				{
-					OnPartedChannel(line.Arguments[0]);
-				}
-			}
-			else
-			{
-				Channels[line.Arguments[0]].RemoveUser(sender.Nick);
-				if (OnPartChannel != null)
-				{
-					OnPartChannel(sender, line.Arguments[0]);
-				}
-			}
-		}
-		private void ProcessJoin(IrcLine line)
-		{
-			var sender = IrcProtocolParser.GetUserFromSender(line.Sender);
-			if (sender.Nick == Nick)
-			{
-				if (Ident != sender.Ident)
-				{
-					Log(this, string.Format("Warning: Real ident ({0}) differs from requested ident ({1}). Ident field changed according to real ident", sender.Ident, Ident));
-					Ident = sender.Ident;
-				}
-				if (LocalHost == null)
-				{
-					Log(this, "Hostmask detected as " + sender.Hostmask);
-					LocalHost = sender.Hostmask;
-				}
-
-				if (Channels.ContainsKey(line.Arguments[0]))
-				{
-					throw new InvalidOperationException("Received a JOIN for " + line.Arguments[0] + " whil already in this channel.");
-				}
-				Channels.Add(line.Arguments[0], new IrcChannel(line.Arguments[0]));
-				if (OnJoinedChannel != null)
-				{
-					OnJoinedChannel(line.Arguments[0]);
-				}
-			}
-			else
-			{
-				Channels[line.Arguments[0]].AddUser(sender.Nick, IrcPermissionLevel.Default);
-				if (OnJoinChannel != null)
-				{
-					OnJoinChannel(sender, line.Arguments[0]);
-				}
-			}
-		}
-		private void ProcessKick(IrcLine line)
-		{
-			var sender = IrcProtocolParser.GetUserFromSender(line.Sender);
-			if (line.Arguments[1].Equals(Nick))
-			{
-				Channels.Remove(line.Arguments[0]);
-				if (OnKicked != null)
-				{
-					OnKicked(line.Arguments[0], line.FinalArgument, sender);
-				}
-			}
-			else if (OnKick != null)
-			{
-
-				OnKick(line.Arguments[1], line.Arguments[0], line.FinalArgument, sender);
-			}
-		}
-		public IrcChannel[] GetChannels()
-		{
-			return Channels.Values.ToArray();
-		}
-		private void ProcessNickChange(IrcLine line)
-		{
-			if (line.User.Nick == Nick)
-			{
-				Nick = line.FinalArgument;
-				if (OnNickChanged != null)
-				{
-					OnNickChanged(line.FinalArgument);
-				}
-			}
-			else
-			{
-				if (OnNickChange != null)
-				{
-					OnNickChange(IrcProtocolParser.GetUserFromSender(line.Sender), line.FinalArgument);
-				}
-			}
-		}
-		private void ProcessPm(IrcLine line)
-		{
-			var parsedMessage = line.FinalArgument;
-			var action = IrcProtocolParser.ParseAction(ref parsedMessage);
-			var sender = IrcProtocolParser.GetUserFromSender(line.Sender);
-			// If it's a private message, the target field will be the client's nick. Otherwise, it will be a channel name.
-			var channel = line.Arguments[0] == Nick ? sender.Nick : line.Arguments[0];
-			var msg = new IrcMessage(sender, channel, parsedMessage, action);
-			foreach (var processor in DataProcessors)
-			{
-				msg = processor.ProcessMessage(msg);
-			}
-
-			if (OnMessageReceived == null) return;
-			OnMessageReceived(msg);
 		}
 
 		/// <summary>
-		/// Sends a raw IRC line to the server.
+		/// Changes the nickname of the current user.
 		/// </summary>
-		/// <param name="data"></param>
-		public bool SendRaw(string data)
+		/// <param name="nick"></param>
+		public void ChangeNick(string nick)
 		{
-			//Logger.Log(data, LogLevel.Out);
-			var result = client.Send(data, 0);
-			if (result)
+			// TODO: validate the nick change
+			clientProtocol.ChangeNick(nick);
+			Nick = nick;
+		}
+
+		/// <summary>
+		/// Quit from the IRC server. Optionally, a reason may be specified.
+		/// </summary>
+		/// <param name="reason"></param>
+		public void Quit(string reason = null)
+		{
+			clientProtocol.Quit(reason);
+			while (Connected)
 			{
-				// When the client sends a message to the IRC server, the IRC server will, in addition to processing this message,
-				// also regard this as an indication that the client is still alive. Therefore, if it was about to send a ping to the client,
-				// it will not do so, since the client has already indicated that it is alive.
-				// For this reason, we must inform the client that (provided that the message is successfully sent) it is still connected to the 
-				// IRC server. If this value is not set, the client will disconnect itself automatically because it isn't receiving any pings within
-				// the spestring.IsNullOrWhitespace(cified ping timeout.
-				lastPing = DateTime.Now;
+				Thread.Sleep(10);
 			}
-			return result;
+		}
+
+		/// <summary>
+		/// Leave a channel. Optionally, a reason may be specified.
+		/// </summary>
+		/// <param name="channel"></param>
+		/// <param name="reason"></param>
+		public void Part(string channel, string reason = null)
+		{
+			clientProtocol.Part(channel, reason);
+			ChannelDict.Remove(channel);
+		}
+
+		/// <summary>
+		/// Leave multiple channels.
+		/// </summary>
+		/// <param name="channelList">The channelList to leave.</param>
+		public void LeaveChannels(List<string> channelList)
+		{
+			clientProtocol.Part(channelList);
 		}
 
 		private void Log(object sender, string message)
 		{
-			// We use a blocking call here, because it may be important that debug messages arrive in the right order.
-			if (OnDebugLog != null)
-			{
-				OnDebugLog(sender, message);
-			}
+			OnDebugLog?.Invoke(sender, message);
 		}
 
 		/// <summary>
 		/// Join a channel.
 		/// </summary>
 		/// <param name="channelName">The channel to join.</param>
-		/// <param name="validate">Should we check if the channel is actually joined?</param>
-		/// <param name="attemptNumber">How many times have we tried to join?</param>
-		public bool JoinChannel(string channelName, bool validate = true, int attemptNumber = 1)
+		/// <param name="validate">If true, checks whether the channel was actually joined.</param>
+		/// <returns>True if <paramref name="validate"/> is set to false. When set to True,
+		/// returns True if the channel was successfully joined, False if it was not.</returns>
+		public bool JoinChannel(string channelName, bool validate = true)
 		{
-
 			channelName = channelName.ToLower();
 			Log(this, "Joining " + channelName);
-			SendRaw("JOIN :" + channelName);
+			clientProtocol.Join(channelName);
 			if (!validate) return true;
 
-			const int sleepTime = 50;
-			var totalSleepTime = 0;
-			while (!Channels.ContainsKey(channelName))
+			for (int i = 0; i < MaxJoinAttempts; i++)
 			{
-				if (totalSleepTime > 1000)
+				if (ChannelDict.ContainsKey(channelName))
 				{
-					if (attemptNumber == MaxJoinAttempts)
-					{
-						Log(this, string.Format("Maximum number of attempts to join {0} reached, channel not joined.", channelName));
-						return false;
-					}
-					Log(this, string.Format("Attempt to join {0} failed, retrying.", channelName));
-					return JoinChannel(channelName, true, ++attemptNumber);
+					return true;
 				}
-				Thread.Sleep(sleepTime);
-				totalSleepTime += sleepTime;
+				else
+				{
+					Thread.Sleep(1000);
+					Log(this, "Joining " + channelName);
+					clientProtocol.Join(channelName);
+				}
 			}
-			return true;
+			return false;
+		}
+		
+		/// <summary>
+		/// Generates the prefix string that any messages coming from this client
+		/// will be prefixed with.
+		/// </summary>
+		/// <param name="target">The target the message should be sent to.</param>
+		/// <returns></returns>
+		private string GeneratePrefix(string target)
+		{
+			return $":{Nick}!{Ident}@{LocalHost} PRIVMSG {target} :";
 		}
 
 		/// <summary>
-		/// Leave a channel.
+		/// Generates the full IRC command that will be sent to other clients when
+		/// this client sends <paramref name="message"/> to <paramref name="target"/>.
 		/// </summary>
-		/// <param name="channelName">The channel to leave.</param>
-		/// <param name="reason">The reason for leaving.</param>
-		public void LeaveChannel(string channelName, string reason = null)
+		/// <param name="target">The target the message should be sent to.</param>
+		/// <param name="message">The contents of the message.</param>
+		/// <returns></returns>
+		private string GenerateFullMessage(string target, string message)
 		{
-			if (reason != null)
-				SendRaw("PART " + channelName + " :" + reason);
-			else
-				SendRaw("PART " + channelName);
+			return $":{Nick}!{Ident}@{LocalHost} PRIVMSG {target} :{message}";
+		}
 
-			Channels.Remove(channelName);
-		}
 		/// <summary>
-		/// Leave multiple channelList.
+		/// Calculates the maximum effective length for an IRC message.
+		/// The maximum effective length is considered to be length the actual
+		/// message itself must not exceed in order for the full IRC command
+		/// that will be received by other clients to not exceed 512 bytes in length.
 		/// </summary>
-		/// <param name="channelList">The channelList to leave.</param>
-		public void LeaveChannel(List<string> channelList)
+		/// <param name="target">The target the message should be sent to.</param>
+		/// <returns>The maximum number of bytes a message may contain in order for it
+		/// to not get cut off at the end.</returns>
+		private int GetMaxMessageLength(string target)
 		{
-			var partMessage = "";
-			foreach (var channel in channelList)
-			{
-				channelList.Remove(channel);
-				partMessage += "," + channel;
-			}
-			SendRaw("PART " + partMessage.Substring(1));
+			return MessageLengthLimit - GeneratePrefix(target).Length;
 		}
+
 		/// <summary>
 		/// Sends a message to the target.
 		/// </summary>
-		/// <param name="target">The channel or user to receive the message.</param>
-		/// <param name="message">The message to be sent.</param>
-		public bool SendMessage(string target, string message)
+		/// <param name="target">The target the message should be sent to.</param>
+		/// <param name="message">The contents of the message.</param>
+		public MessageSendResult SendMessage(string target, string message)
 		{
-			// Make sure any newline characters are stripped from the message.
-			// Replace \n with whitespace, otherwise two words might end up directly next to each other, with no space between them.
-			// By replacing only \n and not \r, we cover all lines terminated by \n and \r\n. Good enough for our purposes.
-			message = message.Replace('\n', ' ').Replace("\r", "");
-
-			foreach (var processor in DataProcessors)
-			{
-				message = processor.PostProcessOutgoingMessage(message);
-			}
-
-			if (Connected)
-			{
-				return SendRaw("PRIVMSG " + target + " :" + message);
-			}
-			throw new InvalidOperationException("Attempt to send a message while the client is not connected to a server");
+			return SendMessageChunk(target, message);
+			//return clientProtocol.SendMessage(target, message) ? MessageSendResult.Success : MessageSendResult.Failure;
 		}
 
-		public object GetConnectionInfo()
+		/// <summary>
+		/// Sends a message to the target. This is a recursive method that, 
+		/// if necessary, will break up longer messages, sending them in parts.
+		/// </summary>
+		/// <param name="target">The target the message should be sent to.</param>
+		/// <param name="message">The contents of the message.</param>
+		/// <param name="messageNumber">Indicates that the message about to be sent
+		/// will be the nth message.  Because this is a numbering scheme (not indexing),
+		/// it starts at one. If a message gets chopped up, the second part will
+		/// have messageNumber = 2, for the tird part it will be 3, and so on.</param>
+		/// <returns></returns>
+		private MessageSendResult SendMessageChunk(string target, string message, int messageNumber = 1)
 		{
-			return new ConnectionInfo
+			if (messageNumber > FloodLimit)
 			{
-				Host = RemoteHost,
-				Port = RemotePort,
-				Nick = Nick,
-				Ident = Ident,
-				RealName = RealName,
-				Invisible = invisible
-			};
+				return MessageSendResult.FloodLimitHit;
+			}
+			string cutoff = null;
+			// CAVEAT: C# uses UTF-16 strings, but IRC uses UTF-8. Therefore, a charcter with a code point
+			// low enough to be a single byte in UTF-16 yet high enough to require two bytes in UTF-8
+			// will be incorrectly reported to have a length of one byte. Unfortunately there is no easy
+			// way to fix this because we don't know how to chop up Unicode messages byte-by-byte.
+			// At some point this should get looked at, but if we're going to implement support for that,
+			// it should be done right.
+			if (GenerateFullMessage(target, message).Length > MessageLengthLimit)
+			{
+				cutoff = message.Substring(GetMaxMessageLength(target));
+				message = message.Substring(0, GetMaxMessageLength(target));
+			}
+
+			var result = clientProtocol.SendMessage(target, message);
+			if (result)
+			{
+				return cutoff == null ? MessageSendResult.Success : SendMessageChunk(target, cutoff, ++messageNumber);
+			}
+			else
+			{
+				return MessageSendResult.Failure;
+			}
 		}
 
+		/// <summary>
+		/// Performs a WHOIS call on an IRC user.
+		/// </summary>
+		/// <param name="user">The nickname of the user to perform a WHOIS call on.</param>
+		/// <returns>An IrcUser object containing information about the requested user.</returns>
+		public IrcUser Whois(string user)
+		{
+			IrcUser whoisResult = null;
+			var matchFound = false;
+			var whoisHandler = new WhoisResultReceivedEvent(ircUser =>
+			{
+				if (!matchFound && string.Equals(ircUser.Nick, user, StringComparison.InvariantCultureIgnoreCase))
+				{
+					matchFound = true;
+					whoisResult = ircUser;
+				}
+			});
+
+			OnWhoisResultReceived += whoisHandler;
+			clientProtocol.Whois(user);
+			while (!matchFound)
+			{
+				Thread.Sleep(100);
+			}
+			// We got the event we're looking for, so we should unsubscribe.
+			OnWhoisResultReceived -= whoisHandler;
+			return whoisResult;
+		}
+
+		/// <summary>
+		/// Performs a NickServ lookup on an IRC user, returning their NickServ
+		/// username if they have one.
+		/// </summary>
+		/// <param name="user">The user to perform a NickServ lookup on.</param>
+		/// <returns><paramref name="user"/>'s NickServ username if they have 
+		/// one, or null if they don't.</returns>
+		public NickservInformation NickservLookup(string user)
+		{
+			NickservInformation lookupResult = null;
+			var matchFound = false;
+			var nickservHandler = new NickservInformationReceivedEvent(nickservInformation =>
+			{
+				if (!matchFound && string.Equals(nickservInformation.Nickname, user, StringComparison.InvariantCultureIgnoreCase))
+				{
+					matchFound = true;
+					lookupResult = nickservInformation;
+				}
+			});
+
+			OnNickservInformationReceived += nickservHandler;
+			clientProtocol.NickServ(user);
+			while (!matchFound)
+			{
+				Thread.Sleep(100);
+			}
+
+			OnNickservInformationReceived -= nickservHandler;
+			return lookupResult;
+		}
+
+		/// <summary>
+		/// Disconnect from the server. This is faster than <see cref="Quit"/>
+		/// as it doesn't notify the server and instantly closes the connection.
+		/// See also <seealso cref="Quit"/>
+		/// </summary>
 		public void Disconnect()
 		{
-			client.Disconnect();
+			clientProtocol.Disconnect();
 		}
 
-		private void HandleDisconnect(Exception reason)
+		public void HandleLogMessage(object sender, string message)
 		{
-			if (!Connected)
+			Log(sender, message);
+		}
+
+		public void SetConnectionState(bool newState)
+		{
+			clientProtocol.Connected = newState;
+		}
+
+		/// <summary>
+		/// Join multiple channels.
+		/// </summary>
+		/// <param name="channels"></param>
+		/// <returns></returns>
+		public bool JoinChannels(IEnumerable<string> channels)
+		{
+			bool success = true;
+			foreach (var channel in channels)
 			{
-				Log(this, "Ignoring disconnect event because the client has already disconnected.");
-				Log(this, string.Format("Connection lost ({0}: {1}) Attempting to reconnect...", reason.GetType().Name, reason.Message));
-				return;
+				success = success && JoinChannel(channel);
 			}
-			Connected = false;
-			client.DisconnectWithoutEvent();
-			if (OnDisconnect == null) return;
-
-			if (quitRequested)
-				OnDisconnect(DisconnectReason.DisconnectOnRequest, null);
-			else
-				OnDisconnect(DisconnectReason.Other, reason);
-		}
-
-		public void Attach(ClientState state)
-		{
-			client = new NetLibClient(TransferProtocolType.Delimited, Encoding.UTF8);
-			HookClientEvents();
-			client.Connect("localhost", 6667);
-			Connected = true;
-
-			SetClientState(state);
-		}
-
-		public List<string> GetUsers(string channel)
-		{
-			return Channels[channel].Users;
+			return success;
 		}
 	}
 }
