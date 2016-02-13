@@ -196,7 +196,6 @@ namespace IRCSharp
 		public void Part(string channel, string reason = null)
 		{
 			clientProtocol.Part(channel, reason);
-			ChannelDict.Remove(channel);
 		}
 
 		/// <summary>
