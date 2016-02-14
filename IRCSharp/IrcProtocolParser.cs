@@ -24,9 +24,9 @@ namespace IRCSharp
 			}
 			if (!sender.Contains("!"))
 			{
-				var nick = String.Empty;
+				var nick = sender;
 				var ident = String.Empty;
-				var hostmask = sender;
+				var hostmask = String.Empty;
 				return new IrcUser(nick, ident, hostmask);
 			}
 			else
