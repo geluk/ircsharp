@@ -144,8 +144,11 @@ namespace IRCSharp
 		private void ProcessTopicSet(IrcLine line)
 		{
 			int seconds;
-			// TODO: Parse failure should be logged
-			int.TryParse(line.Arguments[3], out seconds);
+			if (!int.TryParse(line.Arguments[3], out seconds))
+			{
+				Log("Failed to parse topic set time, defaulting to Unix epoch");
+			}
+			
 			OnTopicSet?.Invoke(line.Arguments[1], IrcProtocolParser.GetUserFromSender(line.Arguments[2]), new DateTime(1970, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc).AddSeconds(seconds));
 		}
 
