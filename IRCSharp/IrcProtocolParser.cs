@@ -50,7 +50,7 @@ namespace IRCSharp
 
 			if (message.StartsWith(actionSequence) && message.EndsWith("\u0001"))
 			{
-				message = message.Substring(actionSequence.Length + 1, message.Length - (actionSequence.Length - 2));
+				message = message.Substring(actionSequence.Length, message.Length - actionSequence.Length - 1).TrimStart();
 				return true;
 			}
 			else
