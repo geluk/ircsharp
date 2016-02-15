@@ -299,6 +299,12 @@ namespace IRCSharp
 					information.LastSeen = DateTime.ParseExact(match.Groups[1].Value, "MMM d HH:mm:ss yyyy", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal);
 					return;
 				}
+				match = Regex.Match(notice, @"[Ll]ast [Ss]een\s+:\s+[Nn]ow$");
+				if (match.Success)
+				{
+					information.LastSeen = DateTime.UtcNow;
+					return;
+				}
 				match = Regex.Match(notice, @"^[Ff]lags\s+:\s+(.*)$");
 				if (match.Success)
 				{
