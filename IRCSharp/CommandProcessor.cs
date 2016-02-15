@@ -265,6 +265,7 @@ namespace IRCSharp
 			{
 				var nick = notice.Substring(1, notice.Length - 2);
 				nick = nick.Substring(0, nick.IndexOf(' ') - 1);
+				OnNickservInformationReceived?.Invoke(null);
 			}else if (collectingNickservInformation)
 			{
 				if (Regex.IsMatch(notice, @"\*\*\*.?\s+.?[Ee]nd [Oo]f [Ii]nfo.?\s+.?\*\*\*"))
