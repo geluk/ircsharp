@@ -312,6 +312,11 @@ namespace IRCSharp
 					information.Flags = match.Groups[1].Value;
 					return;
 				}
+				match = Regex.Match(notice, @"^ .*\s+has enabled nick protection$");
+				if (match.Success)
+				{
+					return;
+				}
 				throw new InvalidOperationException($"Unrecognised NickServ string detected:'\"{notice}\"");
 			}
 		}
