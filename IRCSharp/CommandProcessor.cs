@@ -317,7 +317,7 @@ namespace IRCSharp
 				{
 					return;
 				}
-				throw new InvalidOperationException($"Unrecognised NickServ string detected:'\"{notice}\"");
+				Log("Ignoring unrecognised NickServ reply: " + notice);
 			}
 		}
 
