@@ -312,7 +312,7 @@ namespace IRCSharp
 					information.Flags = match.Groups[1].Value;
 					return;
 				}
-				match = Regex.Match(notice, @"^ .*\s+has enabled nick protection$");
+				match = Regex.Match(notice, @"^.*\s+has enabled nick protection$");
 				if (match.Success)
 				{
 					return;
