@@ -112,7 +112,6 @@ namespace IRCSharp
 		/// </summary>
 		public string Password { get; private set; }
 		public bool QuitRequested { get; private set; }
-		private bool invisible;
 
 		/// <summary>
 		/// Connects to an IRC server using the specified parameters.
@@ -134,7 +133,6 @@ namespace IRCSharp
 			Nick = ci.Nick;
 			Ident = ci.Ident ?? ci.Nick;
 			RealName = ci.RealName;
-			invisible = ci.Invisible;
 			Password = ci.Password;
 
 			clientProtocol = new IrcClientProtocol(this);
