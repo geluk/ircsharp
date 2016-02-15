@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text.RegularExpressions;
 using IRCSharp.IrcCommandProcessors;
 using IRCSharp.IRC;
@@ -277,7 +278,7 @@ namespace IRCSharp
 				var match = Regex.Match(notice, @"^[Rr]egistered\s+:\s+(.*) \(.*\)$");
 				if (match.Success)
 				{
-					information.Registered = DateTime.Parse(match.Groups[1].Value);
+					information.Registered = DateTime.ParseExact(match.Groups[1].Value, "MMM d HH:mm:ss yyyy", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal);
 					return;
 				}
 				match = Regex.Match(notice, @"^[Ee]ntity [Ii][Dd]\s+:\s+(.*)$");
@@ -295,7 +296,7 @@ namespace IRCSharp
 				match = Regex.Match(notice, @"^[Ll]ast [Ss]een\s+:\s+(.*) \(.*\)$");
 				if (match.Success)
 				{
-					information.LastSeen = DateTime.Parse(match.Groups[1].Value);
+					information.LastSeen = DateTime.ParseExact(match.Groups[1].Value, "MMM d HH:mm:ss yyyy", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal);
 					return;
 				}
 				match = Regex.Match(notice, @"^[Ff]lags\s+:\s+(.*)$");
