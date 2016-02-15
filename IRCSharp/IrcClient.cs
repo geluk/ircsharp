@@ -36,8 +36,16 @@ namespace IRCSharp
 		public event TopicSetEvent OnTopicSet; // Client receives the date and time on which a topic was set, and by whom it was set
 		public event NamesKnownEvent OnNamesKnown; // Client has received all the names of the users inside a channel
 		public event ErrorReceivedEvent OnErrorReceived; // Client receives an error
-		public event WhoisResultReceivedEvent OnWhoisResultReceived; // Client receives a WHOIS reply
-		public event NickservInformationReceivedEvent OnNickservInformationReceived; // Client receives information about a user from NickServ
+		public event WhoisResultReceivedEvent OnWhoisResultReceived // Client receives a WHOIS reply
+		{
+			add { commandProcessor.OnWhoisResultReceived += value; }
+			remove { commandProcessor.OnWhoisResultReceived -= value; }
+		}
+		public event NickservInformationReceivedEvent OnNickservInformationReceived // Client receives information about a user from NickServ
+		{
+			add { commandProcessor.OnNickservInformationReceived += value; }
+			remove { commandProcessor.OnNickservInformationReceived -= value; }
+		}
 
 		public List<DataProcessor> DataProcessors = new List<DataProcessor>();
 
@@ -155,8 +163,6 @@ namespace IRCSharp
 			commandProcessor.OnTopicSet += OnTopicSet;
 			commandProcessor.OnNamesKnown += OnNamesKnown;
 			commandProcessor.OnErrorReceived += OnErrorReceived;
-			commandProcessor.OnWhoisResultReceived += OnWhoisResultReceived;
-			commandProcessor.OnNickservInformationReceived += OnNickservInformationReceived;
 
 			clientProtocol.Connect(ci);
 
