@@ -10,6 +10,7 @@ using CsNetLib2.Transfer;
 using IRCSharp.Annotations;
 using IRCSharp.IRC;
 using IRCSharp.IrcCommandProcessors;
+using System.Diagnostics;
 
 namespace IRCSharp
 {
@@ -71,7 +72,7 @@ namespace IRCSharp
 		/// Maximum message length. According to the spec this is 512 bytes.
 		/// We subtract two to account for the \r\n terminator, leaving us with 510 bytes.
 		/// </summary>
-		public int MessageLengthLimit { get; set; }= 510;
+		public int MessageLengthLimit { get; set; } = 510;
 		/// <summary>
 		/// True if there is an active TCP connection between the IRC server and the 
 		/// client AND if there has been network activity less than 200 (default,
@@ -247,7 +248,7 @@ namespace IRCSharp
 			}
 			return false;
 		}
-		
+
 		/// <summary>
 		/// Generates the prefix string that any messages coming from this client
 		/// will be prefixed with.
@@ -379,7 +380,7 @@ namespace IRCSharp
 			var matchFound = false;
 			var nickservHandler = new NickservInformationReceivedEvent(nickservInformation =>
 			{
-				if (!matchFound && string.Equals(nickservInformation.Nickname, user, StringComparison.InvariantCultureIgnoreCase))
+				if (!matchFound && (nickservInformation == null || string.Equals(nickservInformation.Nickname, user, StringComparison.InvariantCultureIgnoreCase)))
 				{
 					matchFound = true;
 					lookupResult = nickservInformation;
@@ -388,9 +389,15 @@ namespace IRCSharp
 
 			OnNickservInformationReceived += nickservHandler;
 			clientProtocol.NickServ(user);
-			while (!matchFound)
+			int i = 0;
+			for (; !matchFound && i < 50; i++)
 			{
 				Thread.Sleep(100);
+			}
+			if (i >= 50)
+			{
+				Log(this, $"WARNING: Nickserv lookup for user {user} timed out.");
+				Debugger.Break();
 			}
 
 			OnNickservInformationReceived -= nickservHandler;
