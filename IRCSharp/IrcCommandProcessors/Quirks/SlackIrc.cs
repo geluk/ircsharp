@@ -1,5 +1,4 @@
-﻿using System.Runtime.Remoting.Channels;
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using IRCSharp.IRC;
 
 namespace IRCSharp.IrcCommandProcessors.Quirks
