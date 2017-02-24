@@ -198,6 +198,8 @@ namespace IRCSharp
 		private void ProcessJoin(IrcLine line)
 		{
 			var sender = IrcProtocolParser.GetUserFromSender(line.Sender);
+
+			var channel = line.FinalArgument;
 			if (sender.Nick == client.Nick)
 			{
 				if (client.Ident != sender.Ident)
@@ -210,17 +212,17 @@ namespace IRCSharp
 					Log("Hostmask detected as " + sender.Hostmask);
 					client.LocalHost = sender.Hostmask;
 				}
-				if (client.ChannelDict.ContainsKey(line.Arguments[0]))
+				if (client.ChannelDict.ContainsKey(channel))
 				{
-					throw new InvalidOperationException("Received a JOIN for " + line.Arguments[0] + " while already in this channel.");
+					throw new InvalidOperationException("Received a JOIN for " + channel + " while already in this channel.");
 				}
-				client.ChannelDict.Add(line.Arguments[0], new IrcChannel(line.Arguments[0]));
-				OnJoinedChannel?.Invoke(line.Arguments[0]);
+				client.ChannelDict.Add(channel, new IrcChannel(channel));
+				OnJoinedChannel?.Invoke(channel);
 			}
 			else
 			{
-				client.ChannelDict[line.Arguments[0]].AddUser(sender.Nick, IrcPermissionLevel.Default);
-				OnJoinChannel?.Invoke(sender, line.Arguments[0]);
+				client.ChannelDict[channel].AddUser(sender.Nick, IrcPermissionLevel.Default);
+				OnJoinChannel?.Invoke(sender, channel);
 			}
 		}
 		private void ProcessKick(IrcLine line)
