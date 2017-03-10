@@ -149,7 +149,7 @@ namespace IRCSharp
 				// it will not do so, since the client has already indicated that it is alive.
 				// For this reason, we must inform the client that (provided that the message is successfully sent) it is still connected to the 
 				// IRC server. If this value is not set, the client will disconnect itself automatically because it isn't receiving any pings within
-				// the spestring.IsNullOrWhitespace(cified ping timeout.
+				// the specified ping timeout.
 				lastPing = DateTime.Now;
 			}
 			return result;
