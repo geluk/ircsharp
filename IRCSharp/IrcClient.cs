@@ -263,7 +263,7 @@ namespace IRCSharp
 		/// <returns></returns>
 		private string GenerateFullMessage(string target, string message)
 		{
-			return $":{Nick}!{Ident}@{LocalHost} PRIVMSG {target} :{message}";
+			return $":{GeneratePrefix(target)}{message}";
 		}
 
 		/// <summary>
