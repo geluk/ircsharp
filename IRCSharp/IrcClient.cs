@@ -340,22 +340,19 @@ namespace IRCSharp
 		public IrcUser Whois(string user)
 		{
 			IrcUser whoisResult = null;
-			var matchFound = false;
+			var ev = new ManualResetEventSlim();
 			var whoisHandler = new WhoisResultReceivedEvent(ircUser =>
 			{
-				if (!matchFound && string.Equals(ircUser.Nick, user, StringComparison.InvariantCultureIgnoreCase))
+				if (string.Equals(ircUser.Nick, user, StringComparison.InvariantCultureIgnoreCase))
 				{
-					matchFound = true;
 					whoisResult = ircUser;
+					ev.Set();
 				}
 			});
 
 			OnWhoisResultReceived += whoisHandler;
 			clientProtocol.Whois(user);
-			while (!matchFound)
-			{
-				Thread.Sleep(100);
-			}
+			ev.Wait(TimeSpan.FromSeconds(10));
 			// We got the event we're looking for, so we should unsubscribe.
 			OnWhoisResultReceived -= whoisHandler;
 			return whoisResult;
