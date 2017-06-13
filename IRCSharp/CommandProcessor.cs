@@ -199,7 +199,8 @@ namespace IRCSharp
 		{
 			var sender = IrcProtocolParser.GetUserFromSender(line.Sender);
 
-			var channel = line.FinalArgument;
+			// TODO: figure out when IRC servers use FinalArgument 
+			var channel = line.FinalArgument ?? line.Arguments[0];
 			if (sender.Nick == client.Nick)
 			{
 				if (client.Ident != sender.Ident)
